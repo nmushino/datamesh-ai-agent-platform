@@ -1,0 +1,15 @@
+apiVersion: v2
+name: enterprise-ai-agent-platform
+description: Enterprise AI Agent Platform - OpenMetadata 自動化プラットフォーム
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - ai-agent
+  - openmetadata
+  - quarkus
+  - langgraph
+  - openshift
+maintainers:
+  - name: drone-platform-team
+    email: load13@gmail.com

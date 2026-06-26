@@ -1,0 +1,16 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ai-agent-sa
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: business-api-sa
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}

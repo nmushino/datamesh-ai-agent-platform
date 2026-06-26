@@ -1,0 +1,151 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: ai-agent-build-pipeline
+  namespace: ai-agent-platform
+  annotations:
+    tekton.dev/cicd: "true"
+    tekton.dev/displayName: "AI Agent ビルド・テスト・デプロイ パイプライン"
+spec:
+  params:
+    - name: git-url
+      type: string
+      description: Git リポジトリ URL
+    - name: git-revision
+      type: string
+      default: main
+      description: Git ブランチ / タグ / コミットハッシュ
+    - name: image-name
+      type: string
+      default: quay.io/droneplatform/ai-agent-orchestrator
+      description: ビルドするイメージ名
+    - name: deploy-overlay
+      type: string
+      default: deployment/kustomize/overlays/dev
+      description: デプロイ先 overlay パス
+  workspaces:
+    - name: shared-workspace
+      description: パイプライン全体で共有するワークスペース
+    - name: docker-credentials
+      description: コンテナレジストリ認証情報
+  results:
+    - name: image-digest
+      description: ビルドされたイメージのダイジェスト
+      value: $(tasks.build-image.results.IMAGE_DIGEST)
+    - name: image-url
+      description: ビルドされたイメージの URL
+      value: $(tasks.build-image.results.IMAGE_URL)
+  tasks:
+    # ① ソースコードを取得
+    - name: git-clone
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+      params:
+        - name: url
+          value: $(params.git-url)
+        - name: revision
+          value: $(params.git-revision)
+        - name: deleteExisting
+          value: "true"
+      workspaces:
+        - name: output
+          workspace: shared-workspace
+
+    # ② 静的解析 (lint)
+    - name: lint
+      runAfter:
+        - git-clone
+      taskRef:
+        name: python-lint
+        kind: Task
+      params:
+        - name: source-dir
+          value: "."
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+
+    # ③ 単体テスト
+    - name: unit-test
+      runAfter:
+        - lint
+      taskRef:
+        name: python-test
+        kind: Task
+      params:
+        - name: source-dir
+          value: "."
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+
+    # ④ コンテナイメージをビルド & プッシュ
+    - name: build-image
+      runAfter:
+        - unit-test
+      taskRef:
+        name: buildah
+        kind: ClusterTask
+      params:
+        - name: IMAGE
+          value: $(params.image-name):$(tasks.git-clone.results.commit)
+        - name: DOCKERFILE
+          value: agent/orchestrator/Dockerfile
+        - name: CONTEXT
+          value: .
+        - name: FORMAT
+          value: oci
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+        - name: dockerconfig
+          workspace: docker-credentials
+
+    # ⑤ イメージスキャン (Trivy)
+    - name: image-scan
+      runAfter:
+        - build-image
+      taskRef:
+        name: trivy-scanner
+        kind: Task
+      params:
+        - name: IMAGE
+          value: $(params.image-name):$(tasks.git-clone.results.commit)
+        - name: SEVERITY
+          value: "CRITICAL,HIGH"
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+
+    # ⑥ Kustomize の image タグを更新して GitOps でデプロイ
+    - name: update-gitops
+      runAfter:
+        - image-scan
+      taskRef:
+        name: update-kustomize-image
+        kind: Task
+      params:
+        - name: image-name
+          value: $(params.image-name)
+        - name: new-tag
+          value: $(tasks.git-clone.results.commit)
+        - name: overlay-path
+          value: $(params.deploy-overlay)
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+
+  # パイプライン失敗時の通知
+  finally:
+    - name: notify-on-failure
+      when:
+        - input: $(tasks.unit-test.status)
+          operator: in
+          values: ["Failed"]
+      taskRef:
+        name: send-slack-notification
+        kind: Task
+      params:
+        - name: message
+          value: "AI Agent パイプラインが失敗しました: $(params.git-url) @ $(params.git-revision)"

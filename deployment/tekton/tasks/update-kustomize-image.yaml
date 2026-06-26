@@ -1,0 +1,83 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: update-kustomize-image
+  namespace: ai-agent-platform
+spec:
+  params:
+    - name: image-name
+      type: string
+      description: 更新するイメージ名 (例: quay.io/droneplatform/ai-agent-orchestrator)
+    - name: new-tag
+      type: string
+      description: 新しいイメージタグ (コミットハッシュ等)
+    - name: overlay-path
+      type: string
+      description: 更新する Kustomize overlay のパス
+      default: deployment/kustomize/overlays/dev
+    - name: git-user-name
+      type: string
+      default: "Tekton Pipeline"
+    - name: git-user-email
+      type: string
+      default: "tekton@drone-platform.example.com"
+  workspaces:
+    - name: source
+  results:
+    - name: commit
+      description: 更新コミットのハッシュ
+  steps:
+    - name: update-image
+      image: registry.redhat.io/openshift4/ose-cli:latest
+      workingDir: $(workspaces.source.path)
+      script: |
+        #!/bin/bash
+        set -e
+
+        # kustomize で image タグを更新
+        cd $(params.overlay-path)
+        kustomize edit set image \
+          $(params.image-name):$(params.new-tag)
+
+        echo "Updated $(params.image-name) to tag $(params.new-tag)"
+
+    - name: git-commit
+      image: alpine/git:2.40.1
+      workingDir: $(workspaces.source.path)
+      env:
+        - name: GIT_AUTHOR_NAME
+          value: $(params.git-user-name)
+        - name: GIT_AUTHOR_EMAIL
+          value: $(params.git-user-email)
+        - name: GIT_COMMITTER_NAME
+          value: $(params.git-user-name)
+        - name: GIT_COMMITTER_EMAIL
+          value: $(params.git-user-email)
+      script: |
+        #!/bin/sh
+        set -e
+
+        git config user.name "$(params.git-user-name)"
+        git config user.email "$(params.git-user-email)"
+
+        git add $(params.overlay-path)/kustomization.yaml
+        git commit -m "ci: update $(params.image-name) to $(params.new-tag)"
+
+        COMMIT=$(git rev-parse HEAD)
+        echo -n "$COMMIT" | tee $(results.commit.path)
+
+    - name: git-push
+      image: alpine/git:2.40.1
+      workingDir: $(workspaces.source.path)
+      env:
+        - name: GIT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: git-credentials
+              key: token
+      script: |
+        #!/bin/sh
+        set -e
+        git remote set-url origin \
+          "https://oauth2:${GIT_TOKEN}@github.com/$(git remote get-url origin | sed 's|.*github.com/||')"
+        git push origin HEAD

@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-ai-agent
+  namespace: ai-agent-platform
+  labels:
+    grafana_dashboard: "true"      # Grafana sidecar が自動認識するラベル
+data:
+  enterprise-ai-agent.json: |
+    # grafana-dashboard.json の内容をここに展開 (kustomize secretGenerator で管理推奨)
+    # 実際のデプロイでは: kubectl create configmap grafana-dashboard-ai-agent \
+    #   --from-file=enterprise-ai-agent.json=deployment/monitoring/grafana-dashboard.json
+    {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasource-prometheus
+  namespace: ai-agent-platform
+  labels:
+    grafana_datasource: "true"
+data:
+  prometheus.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus-operated:9090
+        isDefault: true
+        jsonData:
+          timeInterval: "30s"

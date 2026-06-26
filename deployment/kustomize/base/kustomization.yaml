@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ai-agent/deployment.yaml
+  - ai-agent/service.yaml
+  - ai-agent/route.yaml
+  - business-api/deployment.yaml
+  - business-api/service.yaml
+  - business-api/route.yaml
+  - openmetadata/deployment.yaml
+  - openmetadata/service.yaml
+  - openmetadata/route.yaml
+  - kafka/kafka.yaml
+  - namespace.yaml
+  - rbac.yaml
+  - networkpolicy.yaml
+
+commonLabels:
+  app.kubernetes.io/name: enterprise-ai-agent-platform
+  app.kubernetes.io/managed-by: argocd
+
+commonAnnotations:
+  app.kubernetes.io/part-of: enterprise-ai-agent-platform

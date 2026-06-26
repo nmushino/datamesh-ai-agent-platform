@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-agent-dev
+  namespace: openshift-gitops
+  labels:
+    app.kubernetes.io/part-of: enterprise-ai-agent-platform
+    environment: dev
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/quarkusdroneshop/enterprise-ai-agent-platform
+    targetRevision: main
+    path: deployment/kustomize/overlays/dev
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ai-agent-platform-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true     # Git の状態からの手動変更を自動修正
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
+      - ServerSideApply=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas  # HPA が管理するレプリカ数は無視

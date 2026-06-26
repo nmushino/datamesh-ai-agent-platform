@@ -1,0 +1,129 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: business-api-build-pipeline
+  namespace: ai-agent-platform
+  annotations:
+    tekton.dev/cicd: "true"
+    tekton.dev/displayName: "Business API (Quarkus) ビルド・テスト・デプロイ パイプライン"
+spec:
+  params:
+    - name: git-url
+      type: string
+    - name: git-revision
+      type: string
+      default: main
+    - name: image-name
+      type: string
+      default: quay.io/droneplatform/business-api
+    - name: deploy-overlay
+      type: string
+      default: deployment/kustomize/overlays/dev
+    - name: native-build
+      type: string
+      default: "false"
+      description: "true にすると GraalVM Native ビルドを行う（時間がかかる）"
+  workspaces:
+    - name: shared-workspace
+    - name: maven-cache
+      description: Maven ローカルリポジトリキャッシュ
+    - name: docker-credentials
+  results:
+    - name: image-digest
+      value: $(tasks.build-image.results.IMAGE_DIGEST)
+  tasks:
+    - name: git-clone
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+      params:
+        - name: url
+          value: $(params.git-url)
+        - name: revision
+          value: $(params.git-revision)
+        - name: deleteExisting
+          value: "true"
+      workspaces:
+        - name: output
+          workspace: shared-workspace
+
+    # Maven テスト
+    - name: maven-test
+      runAfter:
+        - git-clone
+      taskRef:
+        name: maven
+        kind: ClusterTask
+      params:
+        - name: GOALS
+          value:
+            - -f
+            - backend/business-api/pom.xml
+            - test
+            - -Dquarkus.profile=test
+        - name: MAVEN_MIRROR_URL
+          value: ""
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+        - name: maven-settings
+          workspace: maven-cache
+
+    # Quarkus ビルド (JVM モード)
+    - name: maven-package
+      runAfter:
+        - maven-test
+      taskRef:
+        name: maven
+        kind: ClusterTask
+      params:
+        - name: GOALS
+          value:
+            - -f
+            - backend/business-api/pom.xml
+            - package
+            - -DskipTests
+            - "-Dquarkus.package.type=$(params.native-build == 'true' ? 'native' : 'uber-jar')"
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+        - name: maven-settings
+          workspace: maven-cache
+
+    # コンテナイメージビルド
+    - name: build-image
+      runAfter:
+        - maven-package
+      taskRef:
+        name: buildah
+        kind: ClusterTask
+      params:
+        - name: IMAGE
+          value: $(params.image-name):$(tasks.git-clone.results.commit)
+        - name: DOCKERFILE
+          value: backend/business-api/src/main/docker/Dockerfile.jvm
+        - name: CONTEXT
+          value: backend/business-api
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+        - name: dockerconfig
+          workspace: docker-credentials
+
+    # GitOps 更新
+    - name: update-gitops
+      runAfter:
+        - build-image
+      taskRef:
+        name: update-kustomize-image
+        kind: Task
+      params:
+        - name: image-name
+          value: $(params.image-name)
+        - name: new-tag
+          value: $(tasks.git-clone.results.commit)
+        - name: overlay-path
+          value: $(params.deploy-overlay)
+      workspaces:
+        - name: source
+          workspace: shared-workspace

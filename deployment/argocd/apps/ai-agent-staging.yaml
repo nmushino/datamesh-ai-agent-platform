@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-agent-staging
+  namespace: openshift-gitops
+  labels:
+    app.kubernetes.io/part-of: enterprise-ai-agent-platform
+    environment: staging
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/quarkusdroneshop/enterprise-ai-agent-platform
+    targetRevision: main
+    path: deployment/kustomize/overlays/staging
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ai-agent-platform-staging
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
+      - ServerSideApply=true
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas

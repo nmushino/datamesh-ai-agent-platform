@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-agent-orchestrator
+  namespace: ai-agent-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ai-agent-orchestrator
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: ai-agent-orchestrator
+    spec:
+      serviceAccountName: ai-agent-sa
+      containers:
+        - name: orchestrator
+          image: quay.io/droneplatform/ai-agent-orchestrator:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: VLLM_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: ai-agent-config
+                  key: vllm-base-url
+            - name: VLLM_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: ai-agent-config
+                  key: vllm-model
+            - name: OPENMETADATA_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: ai-agent-config
+                  key: openmetadata-host
+            - name: BUSINESS_API_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: ai-agent-config
+                  key: business-api-url
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: ai-agent-config
+                  key: kafka-bootstrap-servers
+            - name: OPENMETADATA_JWT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: openmetadata-secret
+                  key: jwt-token
+            - name: AGENT_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: agent-db-secret
+                  key: url
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-agent-config
+  namespace: ai-agent-platform
+data:
+  vllm-base-url: "http://granite-predictor.redhat-ods-applications.svc.cluster.local/v1"
+  vllm-model: "ibm-granite-20b-code-instruct"
+  openmetadata-host: "http://openmetadata:8585"
+  business-api-url: "http://business-api:8080"
+  kafka-bootstrap-servers: "kafka-cluster-kafka-bootstrap:9092"

@@ -1,0 +1,97 @@
+---
+# GitHub Webhook を受信して Tekton パイプラインを起動する
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: github-event-listener
+  namespace: ai-agent-platform
+spec:
+  serviceAccountName: tekton-triggers-sa
+  triggers:
+    # agent/ 配下の変更 → AI Agent パイプライン
+    - name: ai-agent-trigger
+      interceptors:
+        - ref:
+            name: github
+          params:
+            - name: secretRef
+              value:
+                secretName: github-webhook-secret
+                secretKey: secret
+            - name: eventTypes
+              value:
+                - push
+        - ref:
+            name: cel
+          params:
+            - name: filter
+              value: >
+                body.ref.startsWith('refs/heads/') &&
+                body.commits.exists(c, c.modified.exists(f, f.startsWith('agent/')) ||
+                                       c.added.exists(f, f.startsWith('agent/')) ||
+                                       c.modified.exists(f, f.startsWith('tools/')))
+      bindings:
+        - ref: github-push-binding
+      template:
+        ref: ai-agent-pipeline-run-template
+
+    # backend/ 配下の変更 → Business API パイプライン
+    - name: business-api-trigger
+      interceptors:
+        - ref:
+            name: github
+          params:
+            - name: secretRef
+              value:
+                secretName: github-webhook-secret
+                secretKey: secret
+            - name: eventTypes
+              value:
+                - push
+        - ref:
+            name: cel
+          params:
+            - name: filter
+              value: >
+                body.ref.startsWith('refs/heads/') &&
+                body.commits.exists(c, c.modified.exists(f, f.startsWith('backend/')) ||
+                                       c.added.exists(f, f.startsWith('backend/')))
+      bindings:
+        - ref: github-push-binding
+      template:
+        ref: business-api-pipeline-run-template
+---
+# GitHub Webhook 受信用の Route
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: github-event-listener
+  namespace: ai-agent-platform
+spec:
+  to:
+    kind: Service
+    name: el-github-event-listener
+  port:
+    targetPort: http-listener
+  tls:
+    termination: edge
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tekton-triggers-sa
+  namespace: ai-agent-platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tekton-triggers-rb
+  namespace: ai-agent-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: tekton-triggers-eventlistener-roles
+subjects:
+  - kind: ServiceAccount
+    name: tekton-triggers-sa
+    namespace: ai-agent-platform

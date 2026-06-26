@@ -1,0 +1,171 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: enterprise-ai-agent-alerts
+  namespace: ai-agent-platform
+  labels:
+    app: enterprise-ai-agent-platform
+    prometheus: kube-prometheus
+    role: alert-rules
+spec:
+  groups:
+    # ── AI Agent アラート ────────────────────────────────────────────────────
+    - name: ai-agent.rules
+      interval: 30s
+      rules:
+        # LLM レイテンシ警告 (P95 > 10s)
+        - alert: LLMHighLatency
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(ai_agent_llm_latency_seconds_bucket[5m])) by (model, le)
+            ) > 10
+          for: 5m
+          labels:
+            severity: warning
+            component: ai-agent
+          annotations:
+            summary: "LLM レスポンス遅延 (P95={{ $value | humanizeDuration }})"
+            description: "モデル {{ $labels.model }} の P95 レイテンシが 10 秒を超えています。vLLM サービスの状態を確認してください。"
+            runbook_url: "https://github.com/quarkusdroneshop/enterprise-ai-agent-platform/wiki/runbooks/llm-latency"
+
+        # Tool 失敗率 > 10%
+        - alert: ToolFailureRateHigh
+          expr: |
+            (
+              sum(rate(ai_agent_tool_executions_total{success="false"}[5m])) by (tool_name)
+              /
+              sum(rate(ai_agent_tool_executions_total[5m])) by (tool_name)
+            ) > 0.10
+          for: 3m
+          labels:
+            severity: critical
+            component: ai-agent
+          annotations:
+            summary: "Tool {{ $labels.tool_name }} の失敗率が 10% 超 ({{ $value | humanizePercentage }})"
+            description: "Tool の失敗率が高くなっています。依存する外部サービスの状態を確認してください。"
+
+        # 承認待ち操作が蓄積 (> 10件)
+        - alert: PendingApprovalsAccumulating
+          expr: ai_agent_pending_approvals > 10
+          for: 10m
+          labels:
+            severity: warning
+            component: ai-agent
+          annotations:
+            summary: "Human-in-the-Loop 承認待ち: {{ $value }} 件"
+            description: "承認待ちの操作が積み上がっています。担当者が確認・承認を行う必要があります。"
+
+        # アクティブ会話数の急増 (> 100)
+        - alert: ActiveConversationsSurge
+          expr: ai_agent_active_conversations > 100
+          for: 2m
+          labels:
+            severity: warning
+            component: ai-agent
+          annotations:
+            summary: "同時会話数が急増: {{ $value }} 件"
+            description: "AI Agent の同時会話数が急増しています。スケールアウトを検討してください。"
+
+        # LLM トークン消費量の異常増加 (1時間で100万トークン超)
+        - alert: LLMTokenUsageAnomaly
+          expr: |
+            sum(rate(ai_agent_llm_tokens_total[1h])) * 3600 > 1000000
+          for: 5m
+          labels:
+            severity: warning
+            component: ai-agent
+          annotations:
+            summary: "LLM トークン使用量が異常 (1h推計: {{ $value | humanize }} tokens)"
+            description: "予期しないトークン消費増加が検出されました。コスト急増の可能性があります。"
+
+    # ── Business API アラート ───────────────────────────────────────────────
+    - name: business-api.rules
+      interval: 30s
+      rules:
+        # HTTP エラー率 > 5%
+        - alert: BusinessApiHighErrorRate
+          expr: |
+            (
+              sum(rate(http_server_requests_seconds_count{
+                job="business-api", status=~"5.."
+              }[5m]))
+              /
+              sum(rate(http_server_requests_seconds_count{job="business-api"}[5m]))
+            ) > 0.05
+          for: 3m
+          labels:
+            severity: critical
+            component: business-api
+          annotations:
+            summary: "Business API エラー率 > 5% ({{ $value | humanizePercentage }})"
+            description: "Business API の 5xx エラー率が閾値を超えました。ログを確認してください。"
+
+        # P99 レイテンシ > 3s
+        - alert: BusinessApiHighLatency
+          expr: |
+            histogram_quantile(0.99,
+              sum(rate(http_server_requests_seconds_bucket{job="business-api"}[5m])) by (uri, le)
+            ) > 3
+          for: 5m
+          labels:
+            severity: warning
+            component: business-api
+          annotations:
+            summary: "Business API P99 レイテンシ > 3s ({{ $value | humanizeDuration }})"
+
+        # DB コネクションプール枯渇 (> 80%)
+        - alert: DatabaseConnectionPoolExhausted
+          expr: |
+            hikaricp_connections_active{job="business-api"}
+            /
+            hikaricp_connections_max{job="business-api"} > 0.80
+          for: 5m
+          labels:
+            severity: critical
+            component: business-api
+          annotations:
+            summary: "DB コネクションプール使用率 {{ $value | humanizePercentage }}"
+            description: "HikariCP コネクションプールが枯渇に近づいています。接続リークまたは高負荷の可能性があります。"
+
+    # ── インフラ アラート ───────────────────────────────────────────────────
+    - name: infrastructure.rules
+      interval: 60s
+      rules:
+        # Pod クラッシュループ
+        - alert: PodCrashLooping
+          expr: |
+            increase(kube_pod_container_status_restarts_total{
+              namespace=~"ai-agent-platform.*"
+            }[15m]) > 3
+          labels:
+            severity: critical
+            component: infrastructure
+          annotations:
+            summary: "Pod クラッシュループ: {{ $labels.pod }}"
+            description: "Pod {{ $labels.pod }} が過去15分で {{ $value }} 回再起動しています。"
+
+        # vLLM GPU メモリ不足
+        - alert: VLLMGPUMemoryHigh
+          expr: |
+            nvidia_gpu_memory_used_bytes / nvidia_gpu_memory_total_bytes > 0.95
+          for: 5m
+          labels:
+            severity: warning
+            component: vllm
+          annotations:
+            summary: "GPU メモリ使用率 > 95% ({{ $value | humanizePercentage }})"
+            description: "vLLM の GPU メモリが不足しています。max-model-len の調整またはスケールアウトを検討してください。"
+
+        # Kafka Consumer Lag
+        - alert: KafkaConsumerLagHigh
+          expr: |
+            kafka_consumergroup_lag{
+              namespace=~"ai-agent-platform.*"
+            } > 1000
+          for: 10m
+          labels:
+            severity: warning
+            component: kafka
+          annotations:
+            summary: "Kafka Consumer Lag が高い: {{ $value }} メッセージ"
+            description: "コンシューマーグループ {{ $labels.consumergroup }} のラグが増加しています。"

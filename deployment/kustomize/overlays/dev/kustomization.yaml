@@ -1,0 +1,50 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ai-agent-platform-dev
+
+bases:
+  - ../../base
+
+# 開発環境: レプリカ数を最小に
+patches:
+  - target:
+      kind: Deployment
+      name: ai-agent-orchestrator
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+  - target:
+      kind: Deployment
+      name: business-api
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/env/10
+        value:
+          name: KEYCLOAK_URL
+          value: "http://keycloak:8080"
+  # 開発環境: Kafka のレプリカ数を削減
+  - target:
+      kind: Kafka
+      name: kafka-cluster
+    patch: |-
+      - op: replace
+        path: /spec/kafka/replicas
+        value: 1
+      - op: replace
+        path: /spec/zookeeper/replicas
+        value: 1
+
+# イメージタグ: 開発は latest
+images:
+  - name: quay.io/droneplatform/ai-agent-orchestrator
+    newTag: "dev"
+  - name: quay.io/droneplatform/business-api
+    newTag: "dev"
+
+commonLabels:
+  environment: dev

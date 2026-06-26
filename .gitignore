@@ -1,0 +1,35 @@
+# 環境変数・シークレット
+.env
+*.env.local
+deployment/openshift/secrets.yaml
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+coverage.xml
+dist/
+*.egg-info/
+.venv/
+venv/
+
+# Java / Maven
+target/
+*.class
+*.jar
+!*-runner.jar
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Kubernetes
+kubeconfig
+*.kubeconfig

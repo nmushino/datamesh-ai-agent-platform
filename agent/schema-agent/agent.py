@@ -1,0 +1,28 @@
+from pathlib import Path
+from langgraph.prebuilt import create_react_agent
+from agent.common.llm import get_llm
+from tools.openmetadata import (
+    get_database_schema,
+    list_tables,
+    register_table_metadata,
+    update_column_description,
+    create_quality_rule,
+)
+
+_SYSTEM_PROMPT = (Path(__file__).parent.parent.parent / "prompts/schema/system.md").read_text()
+
+SCHEMA_TOOLS = [
+    get_database_schema,
+    list_tables,
+    register_table_metadata,
+    update_column_description,
+    create_quality_rule,
+]
+
+
+def create_schema_agent():
+    return create_react_agent(
+        model=get_llm(),
+        tools=SCHEMA_TOOLS,
+        state_modifier=_SYSTEM_PROMPT,
+    )
