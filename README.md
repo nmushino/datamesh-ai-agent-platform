@@ -62,3 +62,70 @@ OpenMetadata             Quarkus API
 # デプロイ
 ./scripts/deploy.sh
 ```
+
+---
+
+# Enterprise AI Agent Platform
+
+An enterprise AI agent platform centered on OpenMetadata, running on OpenShift AI.
+
+## Architecture Overview
+
+```
+            OpenShift AI
+          (Granite / Llama)
+                 │
+          AI Agent (LangGraph)
+                 │
+  ┌──────────────┴──────────────┐
+  │                             │
+OpenMetadata Tool         Business Tool
+  │                             │
+REST API                   REST API
+  │                             │
+OpenMetadata             Quarkus API
+                               │
+              ┌────────────────┼──────────────┐
+              │                │              │
+          PostgreSQL         Kafka        Other Systems
+```
+
+## Key Use Cases
+
+| Use Case | Description |
+|---|---|
+| Automatic schema registration | Automatically register DB schemas and API specs into OpenMetadata |
+| Metadata search | Search and retrieve OpenMetadata assets using natural language |
+| Business data registration | Register business data (customers, BOM, etc.) linked to metadata |
+| Data quality management | Automatically configure and validate data quality rules |
+
+## Technology Stack
+
+| Layer | Technology |
+|---|---|
+| AI Platform | OpenShift AI, vLLM, IBM Granite |
+| Agent | LangGraph (Python) |
+| Backend | Quarkus (Java) |
+| Metadata | OpenMetadata |
+| Messaging | Apache Kafka |
+| Database | PostgreSQL |
+| Identity Management | Keycloak |
+| Deployment | OpenShift, ArgoCD, Tekton |
+
+## Documentation
+
+- [book/](book/) — Detailed design documentation (17 chapters)
+- [docs/architecture/](docs/architecture/) — Architecture design
+- [docs/implementation/](docs/implementation/) — Implementation guide
+- [docs/deployment/](docs/deployment/) — Deployment instructions
+- [docs/adr/](docs/adr/) — Architecture decision records
+
+## Quick Start
+
+```bash
+# Start the development environment
+./scripts/dev.sh
+
+# Deploy
+./scripts/deploy.sh
+```

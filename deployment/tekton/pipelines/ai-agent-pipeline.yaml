@@ -136,7 +136,7 @@ spec:
         - name: source
           workspace: shared-workspace
 
-  # パイプライン失敗時の通知
+  # パイプライン失敗時の通知 (チャット通知ではなく共有Kafkaのpipeline-notificationsトピックに保持する)
   finally:
     - name: notify-on-failure
       when:
@@ -144,8 +144,12 @@ spec:
           operator: in
           values: ["Failed"]
       taskRef:
-        name: send-slack-notification
+        name: send-kafka-notification
         kind: Task
       params:
         - name: message
           value: "AI Agent パイプラインが失敗しました: $(params.git-url) @ $(params.git-revision)"
+        - name: pipeline-name
+          value: "ai-agent-build-pipeline"
+        - name: status
+          value: "Failed"

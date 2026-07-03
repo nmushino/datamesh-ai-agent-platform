@@ -1,0 +1,38 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: send-kafka-notification
+  namespace: ai-agent-platform
+spec:
+  description: >-
+    パイプラインの通知(失敗時など)をチャットツールへ送信する代わりに、
+    quarkusdroneshop-demo namespace の共有Kafkaクラスタの pipeline-notifications
+    トピックへイベントとして保持する。
+  params:
+    - name: message
+      type: string
+    - name: pipeline-name
+      type: string
+      default: ""
+    - name: status
+      type: string
+      default: "Failed"
+    - name: bootstrap-servers
+      type: string
+      default: "kafka-cluster-kafka-bootstrap.quarkusdroneshop-demo.svc.cluster.local:9092"
+    - name: topic
+      type: string
+      default: "pipeline-notifications"
+  steps:
+    - name: produce
+      image: edenhill/kcat:1.7.1
+      script: |
+        #!/bin/sh
+        set -e
+        TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        PAYLOAD=$(cat <<JSON
+        {"pipeline":"$(params.pipeline-name)","status":"$(params.status)","message":"$(params.message)","timestamp":"${TIMESTAMP}"}
+        JSON
+        )
+        echo "${PAYLOAD}" | kcat -b "$(params.bootstrap-servers)" -t "$(params.topic)" -P
+        echo "Produced notification to topic $(params.topic): ${PAYLOAD}"

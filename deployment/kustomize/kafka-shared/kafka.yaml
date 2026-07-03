@@ -111,3 +111,17 @@ spec:
   replicas: 1
   config:
     retention.ms: "86400000"  # 1日
+---
+# Tekton パイプラインの失敗通知等をチャットツールへの通知の代わりに保持する
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: pipeline-notifications
+  namespace: quarkusdroneshop-demo
+  labels:
+    strimzi.io/cluster: kafka-cluster
+spec:
+  partitions: 1
+  replicas: 1
+  config:
+    retention.ms: "604800000"  # 7日
