@@ -9,16 +9,20 @@ resources:
   - business-api/service.yaml
   - business-api/route.yaml
   - openmetadata/deployment.yaml
-  - openmetadata/service.yaml
   - openmetadata/route.yaml
+  - postgresql/deployment.yaml
+  - keycloak/deployment.yaml
+  - elasticsearch/deployment.yaml
   - kafka/kafka.yaml
   - namespace.yaml
   - rbac.yaml
   - networkpolicy.yaml
 
-commonLabels:
-  app.kubernetes.io/name: enterprise-ai-agent-platform
-  app.kubernetes.io/managed-by: argocd
+labels:
+  - pairs:
+      app.kubernetes.io/name: enterprise-ai-agent-platform
+      app.kubernetes.io/managed-by: argocd
+    includeSelectors: false
 
 commonAnnotations:
   app.kubernetes.io/part-of: enterprise-ai-agent-platform

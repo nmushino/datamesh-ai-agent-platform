@@ -1,8 +1,6 @@
-import os
 import structlog
 from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.postgres import PostgresSaver
 
 from agent.common.state import AgentState
 from agent.orchestrator.router import classify_intent, route_to_agent
@@ -90,7 +88,7 @@ def _check_approval(state: AgentState) -> str:
     return "done"
 
 
-def create_graph(db_url: str | None = None) -> object:
+def create_graph(checkpointer=None) -> object:
     graph = StateGraph(AgentState)
 
     graph.add_node("intent_classifier", intent_classifier_node)
@@ -125,9 +123,7 @@ def create_graph(db_url: str | None = None) -> object:
 
     graph.add_edge("human_approval", END)
 
-    url = db_url or os.environ.get("AGENT_DB_URL")
-    if url:
-        checkpointer = PostgresSaver.from_conn_string(url)
+    if checkpointer:
         checkpointer.setup()
         return graph.compile(checkpointer=checkpointer, interrupt_before=["human_approval"])
 

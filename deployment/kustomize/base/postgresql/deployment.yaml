@@ -1,0 +1,103 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgresql-pvc
+  namespace: ai-agent-platform
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgresql
+  namespace: ai-agent-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgresql
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: postgresql
+    spec:
+      containers:
+        - name: postgresql
+          # :latest は Flyway が未知の新しいマイナーバージョンとして拒否するため固定バージョンを使う
+          image: registry.redhat.io/rhel9/postgresql-15:1-14.1689586478
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRESQL_USER
+              value: postgres
+            - name: POSTGRESQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-secret
+                  key: password
+            - name: POSTGRESQL_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgresql-secret
+                  key: password
+            - name: POSTGRESQL_DATABASE
+              value: dronedb
+          # dronedb 以外に openmetadata_db / agentdb も同一インスタンス上に必要なため起動時に作成する
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - >
+                    until pg_isready -U postgres; do sleep 1; done;
+                    psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'dronedb'" | grep -q 1 ||
+                      psql -U postgres -c "CREATE DATABASE dronedb";
+                    psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'openmetadata_db'" | grep -q 1 ||
+                      psql -U postgres -c "CREATE DATABASE openmetadata_db";
+                    psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'agentdb'" | grep -q 1 ||
+                      psql -U postgres -c "CREATE DATABASE agentdb";
+                    psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'keycloak_db'" | grep -q 1 ||
+                      psql -U postgres -c "CREATE DATABASE keycloak_db";
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/pgsql/data
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          livenessProbe:
+            exec:
+              command: [pg_isready, -U, postgres]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, postgres]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgresql-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql
+  namespace: ai-agent-platform
+spec:
+  selector:
+    app: postgresql
+  ports:
+    - port: 5432
+      targetPort: 5432

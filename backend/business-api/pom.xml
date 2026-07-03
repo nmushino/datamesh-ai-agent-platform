@@ -53,6 +53,16 @@
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-jdbc-postgresql</artifactId>
     </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-flyway</artifactId>
+    </dependency>
+    <!-- quarkus-flyway が同梱する flyway-core にはDB別実装が含まれないため明示的に追加する -->
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-database-postgresql</artifactId>
+      <version>10.15.0</version>
+    </dependency>
     <!-- Validation -->
     <dependency>
       <groupId>io.quarkus</groupId>

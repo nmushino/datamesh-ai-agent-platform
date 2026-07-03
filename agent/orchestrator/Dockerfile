@@ -5,6 +5,8 @@ WORKDIR /app
 # 依存パッケージをインストール（レイヤーキャッシュを最大化）
 COPY agent/requirements.txt agent/requirements.txt
 COPY tools/requirements.txt  tools/requirements.txt
+# /root 配下は OpenShift の任意 UID 実行だと辿れないため /app 配下にインストールする
+ENV PYTHONUSERBASE=/app/.local
 RUN pip install --no-cache-dir --user \
     -r agent/requirements.txt \
     -r tools/requirements.txt
@@ -15,8 +17,9 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # ビルドステージの依存パッケージをコピー
-COPY --from=builder /root/.local /root/.local
-ENV PATH=/root/.local/bin:$PATH
+COPY --from=builder /app/.local /app/.local
+ENV PYTHONUSERBASE=/app/.local
+ENV PATH=/app/.local/bin:$PATH
 
 # アプリケーションコードをコピー
 COPY agent/    agent/

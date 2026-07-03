@@ -51,9 +51,21 @@ spec:
               app: postgresql
       ports:
         - port: 5432
-    - ports:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-dns
+      ports:
+        # dns-default Service は 53 だが CoreDNS 実体は 5353 で待ち受けている
+        # (NetworkPolicy は DNAT 後の実ポートで評価されるため両方許可する)
         - port: 53
           protocol: UDP
+        - port: 53
+          protocol: TCP
+        - port: 5353
+          protocol: UDP
+        - port: 5353
+          protocol: TCP
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -102,6 +114,18 @@ spec:
               app: keycloak
       ports:
         - port: 8080
-    - ports:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-dns
+      ports:
+        # dns-default Service は 53 だが CoreDNS 実体は 5353 で待ち受けている
+        # (NetworkPolicy は DNAT 後の実ポートで評価されるため両方許可する)
         - port: 53
           protocol: UDP
+        - port: 53
+          protocol: TCP
+        - port: 5353
+          protocol: UDP
+        - port: 5353
+          protocol: TCP

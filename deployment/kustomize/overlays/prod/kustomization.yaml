@@ -53,8 +53,10 @@ images:
   - name: quay.io/droneplatform/business-api
     newTag: "1.0.0"
 
-commonLabels:
-  environment: prod
+labels:
+  - pairs:
+      environment: prod
+    includeSelectors: false
 
 # 本番: HPA を追加
 resources:

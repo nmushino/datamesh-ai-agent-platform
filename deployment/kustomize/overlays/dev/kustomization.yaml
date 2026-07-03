@@ -23,28 +23,58 @@ patches:
         path: /spec/replicas
         value: 1
       - op: replace
-        path: /spec/template/spec/containers/0/env/10
+        path: /spec/template/spec/containers/0/env/7
         value:
           name: KEYCLOAK_URL
-          value: "http://keycloak:8080"
-  # 開発環境: Kafka のレプリカ数を削減
+          value: "http://keycloak-service:8080"
+  # 開発環境: Kafka のレプリカ数を削減 (KRaft: KafkaNodePool側で指定)
+  - target:
+      kind: KafkaNodePool
+      name: dual-role
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/storage/size
+        value: 10Gi
+  # ブローカー1台のためレプリケーション係数も1に落とす
   - target:
       kind: Kafka
       name: kafka-cluster
     patch: |-
       - op: replace
-        path: /spec/kafka/replicas
+        path: /spec/kafka/config/offsets.topic.replication.factor
         value: 1
       - op: replace
-        path: /spec/zookeeper/replicas
+        path: /spec/kafka/config/transaction.state.log.replication.factor
+        value: 1
+      - op: replace
+        path: /spec/kafka/config/transaction.state.log.min.isr
+        value: 1
+      - op: replace
+        path: /spec/kafka/config/default.replication.factor
+        value: 1
+      - op: replace
+        path: /spec/kafka/config/min.insync.replicas
+        value: 1
+  - target:
+      kind: KafkaTopic
+    patch: |-
+      - op: replace
+        path: /spec/replicas
         value: 1
 
-# イメージタグ: 開発は latest
+# イメージ: 内部レジストリのdevビルドを使用
 images:
   - name: quay.io/droneplatform/ai-agent-orchestrator
+    newName: image-registry.openshift-image-registry.svc:5000/ai-agent-platform-dev/ai-agent-orchestrator
     newTag: "dev"
   - name: quay.io/droneplatform/business-api
+    newName: image-registry.openshift-image-registry.svc:5000/ai-agent-platform-dev/business-api
     newTag: "dev"
 
-commonLabels:
-  environment: dev
+labels:
+  - pairs:
+      environment: dev
+    includeSelectors: false

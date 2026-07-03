@@ -73,7 +73,9 @@ spec:
             httpGet:
               path: /health
               port: 8000
-            initialDelaySeconds: 30
+            # DB接続リトライ(最大30回x5秒)がlifespan startup内でHTTPサーバー起動をブロックするため
+            # その最大待機時間より長い猶予を確保する
+            initialDelaySeconds: 180
             periodSeconds: 10
             failureThreshold: 3
           readinessProbe:

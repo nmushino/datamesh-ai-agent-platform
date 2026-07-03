@@ -88,8 +88,10 @@ spec:
             httpGet:
               path: /q/health/live
               port: 8080
-            initialDelaySeconds: 30
+            # OIDC接続リトライ(最大20回x5秒)がKeycloak起動完了を待つためHTTPサーバー起動が遅れる場合がある
+            initialDelaySeconds: 150
             periodSeconds: 10
+            failureThreshold: 5
           readinessProbe:
             httpGet:
               path: /q/health/ready
@@ -108,5 +110,5 @@ data:
   db-username: "postgres"
   kafka-bootstrap-servers: "kafka-cluster-kafka-bootstrap:9092"
   openmetadata-host: "http://openmetadata:8585"
-  keycloak-url: "http://keycloak:8080"
+  keycloak-url: "http://keycloak-service:8080"
   keycloak-realm: "drone-platform"

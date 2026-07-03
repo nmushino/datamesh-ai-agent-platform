@@ -28,5 +28,7 @@ images:
   - name: quay.io/droneplatform/business-api
     newTag: "staging"
 
-commonLabels:
-  environment: staging
+labels:
+  - pairs:
+      environment: staging
+    includeSelectors: false

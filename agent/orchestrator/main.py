@@ -1,11 +1,13 @@
 import os
+import time
 import uuid
 import structlog
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, ExitStack
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage
+from langgraph.checkpoint.postgres import PostgresSaver
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -15,15 +17,39 @@ from agent.orchestrator.graph import create_graph
 log = structlog.get_logger()
 
 _graph = None
+_checkpointer_stack = ExitStack()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _graph
     log.info("initializing_graph")
-    _graph = create_graph()
+
+    checkpointer = None
+    db_url = os.environ.get("AGENT_DB_URL")
+    if db_url:
+        # PostgresSaver.from_conn_string はコンテキストマネージャなので
+        # アプリのライフスパンに合わせて ExitStack でコネクションを保持する
+        # Pod起動直後は DNS/ネットワークがまだ安定していないことがあるためリトライする
+        last_error = None
+        for attempt in range(30):
+            try:
+                checkpointer = _checkpointer_stack.enter_context(
+                    PostgresSaver.from_conn_string(db_url)
+                )
+                last_error = None
+                break
+            except Exception as e:
+                last_error = e
+                log.warning("db_connect_retry", attempt=attempt, error=str(e))
+                time.sleep(5)
+        if last_error:
+            raise last_error
+
+    _graph = create_graph(checkpointer=checkpointer)
     log.info("graph_initialized")
     yield
+    _checkpointer_stack.close()
 
 
 app = FastAPI(
