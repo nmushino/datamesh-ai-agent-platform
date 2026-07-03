@@ -38,8 +38,10 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s \
     CMD python -c "import httpx; httpx.get('http://localhost:8000/health').raise_for_status()"
 
+# Kafka通知ブリッジ/LangGraphチェックポイントの状態をプロセス内メモリで保持しているため
+# 複数ワーカーだとワーカーごとに状態が分裂してしまう。単一ワーカーで動かす
 CMD ["uvicorn", "agent.orchestrator.main:app", \
      "--host", "0.0.0.0", \
      "--port", "8000", \
-     "--workers", "2", \
+     "--workers", "1", \
      "--log-level", "info"]

@@ -15,6 +15,7 @@ resources:
   - keycloak/deployment.yaml
   - ollama/deployment.yaml
   - qwen3-serving/deployment.yaml
+  - chat-ui/deployment.yaml
   - namespace.yaml
   - rbac.yaml
   - networkpolicy.yaml

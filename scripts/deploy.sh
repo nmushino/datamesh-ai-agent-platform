@@ -205,6 +205,7 @@ echo "  business-api を mvn package でビルド中..."
 (cd backend/business-api && mvn -q -DskipTests package)
 build_image business-api backend/business-api src/main/docker/Dockerfile.jvm
 build_image ai-agent-orchestrator . agent/orchestrator/Dockerfile
+build_image chat-ui frontend/chat-ui Dockerfile
 
 # ===== Kafka (共有クラスタ) デプロイ =====
 echo "Kafka (${KAFKA_NAMESPACE}) をデプロイ中..."
@@ -217,9 +218,27 @@ oc delete job qwen3-4b-model-download -n "$NAMESPACE" --ignore-not-found=true &>
 echo "Kustomize でデプロイ中..."
 oc apply -k "deployment/kustomize/overlays/${ENV}" -n "$NAMESPACE"
 
+# chat-ui はブラウザから直接 各サービスの外部 Route を叩くため、
+# Route作成後に実際のホスト名を環境変数に反映する。
+# OpenMetadata/Developer Hub は同じクラスタのappsドメインを共有している前提で、
+# 自クラスタのRouteホスト名からドメイン部分(先頭のroute名を除いた部分)を導出して組み立てる
+AI_AGENT_ROUTE_HOST="$(oc get route ai-agent-orchestrator -n "$NAMESPACE" -o jsonpath='{.spec.host}' 2>/dev/null)"
+KEYCLOAK_ROUTE_HOST="$(oc get route keycloak -n "$NAMESPACE" -o jsonpath='{.spec.host}' 2>/dev/null)"
+if [ -n "$AI_AGENT_ROUTE_HOST" ]; then
+  APPS_DOMAIN="${APPS_DOMAIN:-${AI_AGENT_ROUTE_HOST#*.}}"
+  OPENMETADATA_URL="${OPENMETADATA_URL:-http://openmetadata-openmetadata.${APPS_DOMAIN}}"
+  DEVELOPER_HUB_URL="${DEVELOPER_HUB_URL:-https://backstage-developer-hub-quarkusdroneshop-rhdh.${APPS_DOMAIN}}"
+  oc set env deployment/chat-ui -n "$NAMESPACE" \
+    "API_BASE_URL=https://${AI_AGENT_ROUTE_HOST}" \
+    "KEYCLOAK_URL=https://${KEYCLOAK_ROUTE_HOST}" \
+    "OPENMETADATA_URL=${OPENMETADATA_URL}" \
+    "DEVELOPER_HUB_URL=${DEVELOPER_HUB_URL}" >/dev/null
+fi
+
 # 既存イメージタグを再利用するデプロイ済み環境では、新しいビルドを反映するためロールアウトを促す
 oc rollout restart deployment/ai-agent-orchestrator -n "$NAMESPACE" 2>/dev/null || true
 oc rollout restart deployment/business-api -n "$NAMESPACE" 2>/dev/null || true
+oc rollout restart deployment/chat-ui -n "$NAMESPACE" 2>/dev/null || true
 
 # ArgoCD Application 作成
 if [ "$ENV" == "prod" ]; then

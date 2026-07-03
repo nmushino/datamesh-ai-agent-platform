@@ -58,6 +58,13 @@ spec:
               app: postgresql
       ports:
         - port: 5432
+    # pipeline-notifications トピック購読 (chat-ui通知バッジ用)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: quarkusdroneshop-demo
+      ports:
+        - port: 9092
     - to:
         - namespaceSelector:
             matchLabels:

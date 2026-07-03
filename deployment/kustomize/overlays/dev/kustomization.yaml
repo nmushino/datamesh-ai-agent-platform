@@ -36,6 +36,9 @@ images:
   - name: quay.io/droneplatform/business-api
     newName: image-registry.openshift-image-registry.svc:5000/ai-agent-platform-dev/business-api
     newTag: "dev"
+  - name: quay.io/droneplatform/chat-ui
+    newName: image-registry.openshift-image-registry.svc:5000/ai-agent-platform-dev/chat-ui
+    newTag: "dev"
 
 labels:
   - pairs:

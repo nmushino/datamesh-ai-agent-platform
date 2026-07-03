@@ -15,6 +15,10 @@ dist/
 .venv/
 venv/
 
+# Node.js
+node_modules/
+*.tsbuildinfo
+
 # Java / Maven
 target/
 *.class

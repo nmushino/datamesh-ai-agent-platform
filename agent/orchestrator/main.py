@@ -1,3 +1,5 @@
+import asyncio
+import json
 import os
 import time
 import uuid
@@ -5,6 +7,7 @@ import structlog
 from contextlib import asynccontextmanager, ExitStack
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.postgres import PostgresSaver
@@ -13,6 +16,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from agent.orchestrator.graph import create_graph
+from agent.orchestrator.notifications import get_bridge
 
 log = structlog.get_logger()
 
@@ -48,7 +52,11 @@ async def lifespan(app: FastAPI):
 
     _graph = create_graph(checkpointer=checkpointer)
     log.info("graph_initialized")
+
+    get_bridge().start(asyncio.get_event_loop())
+
     yield
+    get_bridge().stop()
     _checkpointer_stack.close()
 
 
@@ -156,6 +164,32 @@ def approve(req: ApprovalRequest):
     except Exception as e:
         log.error("approval_resume_failed", error=str(e))
         raise HTTPException(500, f"承認後の実行エラー: {str(e)}")
+
+
+@app.get("/api/v1/notifications/recent")
+def notifications_recent():
+    return {"notifications": get_bridge().recent()}
+
+
+@app.get("/api/v1/notifications/stream")
+async def notifications_stream():
+    bridge = get_bridge()
+    queue = bridge.subscribe()
+
+    async def event_generator():
+        try:
+            # 接続直後は既知の直近通知をまとめて送る
+            for item in bridge.recent():
+                yield f"data: {json.dumps(item)}\n\n"
+            while True:
+                item = await queue.get()
+                yield f"data: {json.dumps(item)}\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            bridge.unsubscribe(queue)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.websocket("/ws/chat")
