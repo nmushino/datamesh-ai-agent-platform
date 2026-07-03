@@ -13,6 +13,7 @@ resources:
   - business-api/route.yaml
   - postgresql/deployment.yaml
   - keycloak/deployment.yaml
+  - ollama/deployment.yaml
   - namespace.yaml
   - rbac.yaml
   - networkpolicy.yaml

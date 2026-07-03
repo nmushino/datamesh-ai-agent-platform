@@ -38,6 +38,7 @@ spec:
               app: business-api
       ports:
         - port: 8080
+    # OpenShift AI (RHOAI) 導入環境向け (未導入のsandboxではマッチしないだけで無害)
     - to:
         - namespaceSelector:
             matchLabels:
@@ -46,6 +47,13 @@ spec:
         - port: 80
         - port: 8080
         - port: 443
+    # OpenShift AI 未導入のsandbox向けOllama代替
+    - to:
+        - podSelector:
+            matchLabels:
+              app: ollama
+      ports:
+        - port: 11434
     - to:
         - podSelector:
             matchLabels:

@@ -92,8 +92,9 @@ metadata:
   name: ai-agent-config
   namespace: ai-agent-platform
 data:
-  vllm-base-url: "http://granite-predictor.redhat-ods-applications.svc.cluster.local/v1"
-  vllm-model: "ibm-granite-20b-code-instruct"
+  # OpenShift AI (RHOAI/vLLM) 未導入のsandbox向けにOllamaで代替する
+  vllm-base-url: "http://ollama:11434/v1"
+  vllm-model: "granite3-dense:2b"
   # OpenMetadata / Kafka は openmetadata / quarkusdroneshop-demo namespace の既存インスタンスを共用する
   openmetadata-host: "http://openmetadata.openmetadata.svc.cluster.local:8585"
   business-api-url: "http://business-api:8080"
