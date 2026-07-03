@@ -49,9 +49,11 @@ patches:
 
 images:
   - name: quay.io/droneplatform/ai-agent-orchestrator
-    newTag: "1.0.0"
+    newName: image-registry.openshift-image-registry.svc:5000/ai-agent-platform-prod/ai-agent-orchestrator
+    newTag: "prod"
   - name: quay.io/droneplatform/business-api
-    newTag: "1.0.0"
+    newName: image-registry.openshift-image-registry.svc:5000/ai-agent-platform-prod/business-api
+    newTag: "prod"
 
 labels:
   - pairs:

@@ -108,7 +108,8 @@ data:
   db-host: "postgresql"
   db-name: "dronedb"
   db-username: "postgres"
-  kafka-bootstrap-servers: "kafka-cluster-kafka-bootstrap:9092"
-  openmetadata-host: "http://openmetadata:8585"
+  # OpenMetadata / Kafka は openmetadata / quarkusdroneshop-demo namespace の既存インスタンスを共用する
+  kafka-bootstrap-servers: "kafka-cluster-kafka-bootstrap.quarkusdroneshop-demo.svc.cluster.local:9092"
+  openmetadata-host: "http://openmetadata.openmetadata.svc.cluster.local:8585"
   keycloak-url: "http://keycloak-service:8080"
   keycloak-realm: "drone-platform"

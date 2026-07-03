@@ -27,43 +27,6 @@ patches:
         value:
           name: KEYCLOAK_URL
           value: "http://keycloak-service:8080"
-  # 開発環境: Kafka のレプリカ数を削減 (KRaft: KafkaNodePool側で指定)
-  - target:
-      kind: KafkaNodePool
-      name: dual-role
-    patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 1
-      - op: replace
-        path: /spec/storage/size
-        value: 10Gi
-  # ブローカー1台のためレプリケーション係数も1に落とす
-  - target:
-      kind: Kafka
-      name: kafka-cluster
-    patch: |-
-      - op: replace
-        path: /spec/kafka/config/offsets.topic.replication.factor
-        value: 1
-      - op: replace
-        path: /spec/kafka/config/transaction.state.log.replication.factor
-        value: 1
-      - op: replace
-        path: /spec/kafka/config/transaction.state.log.min.isr
-        value: 1
-      - op: replace
-        path: /spec/kafka/config/default.replication.factor
-        value: 1
-      - op: replace
-        path: /spec/kafka/config/min.insync.replicas
-        value: 1
-  - target:
-      kind: KafkaTopic
-    patch: |-
-      - op: replace
-        path: /spec/replicas
-        value: 1
 
 # イメージ: 内部レジストリのdevビルドを使用
 images:

@@ -25,10 +25,11 @@ spec:
       ports:
         - port: 8000
   egress:
+    # OpenMetadata は openmetadata namespace の既存インスタンスを共用する
     - to:
-        - podSelector:
+        - namespaceSelector:
             matchLabels:
-              app: openmetadata
+              kubernetes.io/metadata.name: openmetadata
       ports:
         - port: 8585
     - to:
@@ -96,16 +97,18 @@ spec:
               app: postgresql
       ports:
         - port: 5432
+    # Kafka は quarkusdroneshop-demo namespace の共有クラスタを利用する
     - to:
-        - podSelector:
+        - namespaceSelector:
             matchLabels:
-              strimzi.io/name: kafka-cluster-kafka
+              kubernetes.io/metadata.name: quarkusdroneshop-demo
       ports:
         - port: 9092
+    # OpenMetadata は openmetadata namespace の既存インスタンスを共用する
     - to:
-        - podSelector:
+        - namespaceSelector:
             matchLabels:
-              app: openmetadata
+              kubernetes.io/metadata.name: openmetadata
       ports:
         - port: 8585
     - to:

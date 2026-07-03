@@ -94,6 +94,7 @@ metadata:
 data:
   vllm-base-url: "http://granite-predictor.redhat-ods-applications.svc.cluster.local/v1"
   vllm-model: "ibm-granite-20b-code-instruct"
-  openmetadata-host: "http://openmetadata:8585"
+  # OpenMetadata / Kafka は openmetadata / quarkusdroneshop-demo namespace の既存インスタンスを共用する
+  openmetadata-host: "http://openmetadata.openmetadata.svc.cluster.local:8585"
   business-api-url: "http://business-api:8080"
-  kafka-bootstrap-servers: "kafka-cluster-kafka-bootstrap:9092"
+  kafka-bootstrap-servers: "kafka-cluster-kafka-bootstrap.quarkusdroneshop-demo.svc.cluster.local:9092"
