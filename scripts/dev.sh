@@ -1,6 +1,27 @@
 #!/bin/bash
 set -e
-
+# =============================================================================
+# Script Name: dev.sh
+# Description: Enterprise AI Agent Platform のローカル開発環境を起動する
+#              (docker compose で PostgreSQL/Kafka/OpenMetadata を起動し、
+#               Quarkus Business API と AI Agent をdevモードで起動する)
+# Author: Enterprise AI Agent Platform Team
+# Date Created: 2026-06-26
+# Last Modified: 2026-07-04
+# Version: 1.0
+#
+# Usage:
+#   ./scripts/dev.sh
+#
+#   終了するには起動後に Ctrl+C を押す
+#
+# Prerequisites:
+#   - Docker (docker compose) が導入・起動済みであること
+#   - Python3 が導入済みであること (AI Agentの起動に使用)
+#   - Maven (mvn) が導入済みであること (Business APIの起動に使用)
+#   - リポジトリルートに .env ファイルがあれば自動で読み込む
+#
+# =============================================================================
 echo "=== Enterprise AI Agent Platform - Dev Environment ==="
 
 # 依存チェック

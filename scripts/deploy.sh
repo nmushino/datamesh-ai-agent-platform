@@ -1,6 +1,32 @@
 #!/bin/bash
 set -e
-
+# =============================================================================
+# Script Name: deploy.sh
+# Description: Enterprise AI Agent Platform を OpenShift にビルド〜デプロイする
+#              (Operatorインストール〜イメージビルド〜Kustomizeデプロイまで一括実行)
+# Author: Enterprise AI Agent Platform Team
+# Date Created: 2026-06-26
+# Last Modified: 2026-07-04
+# Version: 1.0
+#
+# Usage:
+#   ./scripts/deploy.sh [ENV] [--init-secrets]
+#
+#   ENV              - dev(既定) / staging / prod
+#   --init-secrets   - 初回のみ指定。postgresql/keycloak/agent-db/openmetadata
+#                      各Secretを環境変数から作成する
+#
+#   例:
+#     ./scripts/deploy.sh dev --init-secrets
+#     ./scripts/deploy.sh staging
+#
+# Prerequisites:
+#   - OpenShift CLI (oc) が導入済み・ログイン済みであること
+#   - Maven (mvn) が導入済みであること (business-apiのビルドに使用)
+#   - JDK 21 が導入されていること (macOSでは自動検出、他OSは JAVA_HOME を設定)
+#   - oc でクラスタ管理者相当の権限 (Operator/Subscription作成) を持つこと
+#
+# =============================================================================
 ENV=${1:-dev}
 echo "=== Enterprise AI Agent Platform - Deploy to OpenShift ($ENV) ==="
 
