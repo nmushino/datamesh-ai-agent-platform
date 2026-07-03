@@ -27,8 +27,9 @@ oc label namespace "$NAMESPACE" argocd.argoproj.io/managed-by=openshift-gitops -
 # ===== Operator インストール (未導入の場合のみ) =====
 # CSV名はパッケージ名と一致しない場合がある(例: amq-streams -> amqstreams.vX.Y.Z)ため
 # Subscription の status.installedCSV から実際のCSV名を取得して判定する
+# mode: "single" (targetNamespaces指定) または "all" (AllNamespaces、targetNamespacesなし)
 install_operator() {
-  local name=$1 channel=$2 ns=$3
+  local name=$1 channel=$2 ns=$3 mode=${4:-single}
   local installed_csv
   installed_csv="$(oc get subscription "$name" -n "$ns" -o jsonpath='{.status.installedCSV}' 2>/dev/null)"
   if [ -n "$installed_csv" ] && oc get csv "$installed_csv" -n "$ns" -o jsonpath='{.status.phase}' 2>/dev/null | grep -q Succeeded; then
@@ -37,6 +38,11 @@ install_operator() {
   fi
   echo "  ${name} を ${ns} にインストール中..."
   oc get namespace "$ns" &>/dev/null || oc new-project "$ns" >/dev/null
+  local target_ns_yaml=""
+  if [ "$mode" == "single" ]; then
+    target_ns_yaml="  targetNamespaces:
+    - ${ns}"
+  fi
   cat <<EOF | oc apply -f - >/dev/null
 apiVersion: operators.coreos.com/v1
 kind: OperatorGroup
@@ -44,8 +50,7 @@ metadata:
   name: ${ns}-og
   namespace: ${ns}
 spec:
-  targetNamespaces:
-    - ${ns}
+${target_ns_yaml}
 ---
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
@@ -73,6 +78,44 @@ EOF
 echo "Operator を確認・インストール中..."
 install_operator rhbk-operator stable-v26.6 "$NAMESPACE"
 install_operator amq-streams stable "$KAFKA_NAMESPACE"
+# OpenShift AI (RHOAI) — Qwen3-4B を vLLM CPU (KServe) で提供するために必要
+install_operator rhods-operator stable-3.x redhat-ods-operator all
+
+# ===== OpenShift AI: DataScienceCluster (kserveのみ有効化、単一ノード想定で他は無効化) =====
+if ! oc get datasciencecluster default-dsc &>/dev/null; then
+  echo "DataScienceCluster を作成中..."
+  cat <<'EOF' | oc apply -f - >/dev/null
+apiVersion: datasciencecluster.opendatahub.io/v2
+kind: DataScienceCluster
+metadata:
+  name: default-dsc
+spec:
+  components:
+    kserve:
+      managementState: Managed
+      rawDeploymentServiceConfig: Headed
+    dashboard: {managementState: Removed}
+    workbenches: {managementState: Removed}
+    modelregistry: {managementState: Removed}
+    ray: {managementState: Removed}
+    trainingoperator: {managementState: Removed}
+    trainer: {managementState: Removed}
+    trustyai: {managementState: Removed}
+    kueue: {managementState: Removed}
+    feastoperator: {managementState: Removed}
+    aipipelines: {managementState: Removed}
+    mlflowoperator: {managementState: Removed}
+    sparkoperator: {managementState: Removed}
+    llamastackoperator: {managementState: Removed}
+EOF
+  for i in $(seq 1 30); do
+    phase="$(oc get datasciencecluster default-dsc -o jsonpath='{.status.phase}' 2>/dev/null)"
+    [ "$phase" == "Ready" ] && { echo "  DataScienceCluster: Ready"; break; }
+    sleep 10
+  done
+else
+  echo "  DataScienceCluster: 導入済み"
+fi
 
 # ===== Secret 作成 (初回のみ) =====
 if [ "$2" == "--init-secrets" ]; then
@@ -140,6 +183,9 @@ build_image ai-agent-orchestrator . agent/orchestrator/Dockerfile
 # ===== Kafka (共有クラスタ) デプロイ =====
 echo "Kafka (${KAFKA_NAMESPACE}) をデプロイ中..."
 oc apply -k deployment/kustomize/kafka-shared -n "$KAFKA_NAMESPACE"
+
+# Jobのpod templateは不変のため、完了済みJobが残っていると再apply時にkustomizeが失敗する
+oc delete job qwen3-4b-model-download -n "$NAMESPACE" --ignore-not-found=true &>/dev/null
 
 # ===== Kustomize デプロイ =====
 echo "Kustomize でデプロイ中..."
