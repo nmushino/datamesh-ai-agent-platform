@@ -1,5 +1,6 @@
 import os
 from functools import lru_cache
+from langchain_core.messages import BaseMessage
 from langchain_openai import ChatOpenAI
 
 
@@ -15,3 +16,14 @@ def get_llm(model: str | None = None, temperature: float = 0) -> ChatOpenAI:
         # 応答時間を大幅に伸ばすため無効化する
         extra_body={"chat_template_kwargs": {"enable_thinking": False}},
     )
+
+
+def sum_tokens(messages: list[BaseMessage]) -> int:
+    """create_react_agentのツール呼び出しループでは複数回LLMを呼ぶことがあるため、
+    このターンで新規に生成された全メッセージのトークン数を合算する"""
+    total = 0
+    for m in messages:
+        usage = getattr(m, "usage_metadata", None)
+        if usage:
+            total += usage.get("total_tokens", 0)
+    return total

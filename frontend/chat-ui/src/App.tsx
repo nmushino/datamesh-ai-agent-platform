@@ -1,13 +1,17 @@
 import { useEffect, useState } from "react";
-import { useAuth } from "react-oidc-context";
+import { useAppAuth } from "./useAppAuth";
 import { Header } from "./components/Header";
 import { Sidebar } from "./components/Sidebar";
 import { ChatBody } from "./components/ChatBody";
+import { Footer } from "./components/Footer";
 import { useThreads } from "./useThreads";
+import { useScheduledTasks } from "./useScheduledTasks";
 import { sendChatMessage } from "./api";
 
+const SIDEBAR_DEFAULT_WIDTH = 300;
+
 export default function App() {
-  const auth = useAuth();
+  const auth = useAppAuth();
   const {
     threads,
     activeThread,
@@ -17,7 +21,10 @@ export default function App() {
     appendMessage,
     deleteThread,
   } = useThreads();
+  const { tasks: scheduledTasks } = useScheduledTasks();
   const [sending, setSending] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
 
   // 未ログインなら自動でKeycloakのログイン画面へリダイレクトする
   useEffect(() => {
@@ -47,10 +54,12 @@ export default function App() {
         role: "assistant",
         content: res.reply,
         createdAt: Date.now(),
+        tokenUsage: res.token_usage,
       });
     } catch (e) {
       // ネットワーク断・タイムアウト時、ブラウザは "TypeError: Failed to fetch" を投げるが
-      // ユーザーには技術的な文言でなく分かりやすいメッセージを表示する
+      // ユーザーには技術的な文言でなく分かりやすいメッセージを表示し、
+      // 原因の詳細は補足としてグレー文字で下に添える
       const isNetworkError = e instanceof TypeError;
       appendMessage(threadId, {
         id: crypto.randomUUID(),
@@ -59,6 +68,7 @@ export default function App() {
           ? "回答できませんでした"
           : `エラーが発生しました: ${(e as Error).message}`,
         createdAt: Date.now(),
+        errorReason: isNetworkError ? (e as Error).message : undefined,
       });
     } finally {
       setSending(false);
@@ -79,7 +89,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <Header />
+      <Header onToggleSidebar={() => setSidebarOpen((v) => !v)} />
       <div className="app-content">
         <Sidebar
           threads={threads}
@@ -87,9 +97,14 @@ export default function App() {
           onSelect={setActiveThreadId}
           onCreate={createThread}
           onDelete={deleteThread}
+          open={sidebarOpen}
+          width={sidebarWidth}
+          onResizeWidth={setSidebarWidth}
+          scheduledTasks={scheduledTasks}
         />
         <ChatBody thread={activeThread} sending={sending} onSend={handleSend} />
       </div>
+      <Footer />
     </div>
   );
 }

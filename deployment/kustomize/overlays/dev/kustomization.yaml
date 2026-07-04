@@ -1,7 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: ai-agent-platform-dev
+namespace: ai-agent-platform
 
 bases:
   - ../../base
@@ -22,22 +22,17 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 1
-      - op: replace
-        path: /spec/template/spec/containers/0/env/7
-        value:
-          name: KEYCLOAK_URL
-          value: "http://keycloak-service:8080"
 
 # イメージ: 内部レジストリのdevビルドを使用
 images:
   - name: quay.io/droneplatform/ai-agent-orchestrator
-    newName: image-registry.openshift-image-registry.svc:5000/ai-agent-platform-dev/ai-agent-orchestrator
+    newName: image-registry.openshift-image-registry.svc:5000/ai-agent-platform/ai-agent-orchestrator
     newTag: "dev"
   - name: quay.io/droneplatform/business-api
-    newName: image-registry.openshift-image-registry.svc:5000/ai-agent-platform-dev/business-api
+    newName: image-registry.openshift-image-registry.svc:5000/ai-agent-platform/business-api
     newTag: "dev"
   - name: quay.io/droneplatform/chat-ui
-    newName: image-registry.openshift-image-registry.svc:5000/ai-agent-platform-dev/chat-ui
+    newName: image-registry.openshift-image-registry.svc:5000/ai-agent-platform/chat-ui
     newTag: "dev"
 
 labels:

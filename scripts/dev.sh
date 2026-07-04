@@ -2,10 +2,10 @@
 set -e
 # =============================================================================
 # Script Name: dev.sh
-# Description: Enterprise AI Agent Platform のローカル開発環境を起動する
+# Description: Datamesh AI Agent Platform のローカル開発環境を起動する
 #              (docker compose で PostgreSQL/Kafka/OpenMetadata を起動し、
 #               Quarkus Business API と AI Agent をdevモードで起動する)
-# Author: Enterprise AI Agent Platform Team
+# Author: Datamesh AI Agent Platform Team
 # Date Created: 2026-06-26
 # Last Modified: 2026-07-04
 # Version: 1.0
@@ -22,7 +22,7 @@ set -e
 #   - リポジトリルートに .env ファイルがあれば自動で読み込む
 #
 # =============================================================================
-echo "=== Enterprise AI Agent Platform - Dev Environment ==="
+echo "=== Datamesh AI Agent Platform - Dev Environment ==="
 
 # 依存チェック
 command -v docker &>/dev/null || { echo "docker が必要です"; exit 1; }

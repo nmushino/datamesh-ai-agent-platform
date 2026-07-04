@@ -27,11 +27,13 @@ export function useThreads() {
   }, [threads]);
 
   const createThread = useCallback((): string => {
+    const now = Date.now();
     const thread: Thread = {
       id: crypto.randomUUID(),
       title: "新しい会話",
       messages: [],
-      createdAt: Date.now(),
+      createdAt: now,
+      updatedAt: now,
     };
     setThreads((prev) => [thread, ...prev]);
     setActiveThreadId(thread.id);
@@ -47,7 +49,12 @@ export function useThreads() {
             t.messages.length === 0 && message.role === "user"
               ? message.content.slice(0, 24)
               : t.title;
-          return { ...t, title, messages: [...t.messages, message] };
+          return {
+            ...t,
+            title,
+            messages: [...t.messages, message],
+            updatedAt: message.createdAt,
+          };
         })
       );
     },

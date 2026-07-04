@@ -1,13 +1,19 @@
 import { useState } from "react";
-import { useAuth } from "react-oidc-context";
+import { useAppAuth } from "../useAppAuth";
 import { Logo } from "./Logo";
+import { OpenMetadataIcon } from "./OpenMetadataIcon";
+import { DatameshHubIcon } from "./DatameshHubIcon";
 import { NotificationPanel } from "./NotificationPanel";
 import { useNotifications } from "../useNotifications";
 
-export function Header() {
+interface Props {
+  onToggleSidebar: () => void;
+}
+
+export function Header({ onToggleSidebar }: Props) {
   const { notifications, unreadCount, markAllRead } = useNotifications();
   const [open, setOpen] = useState(false);
-  const auth = useAuth();
+  const auth = useAppAuth();
   const config = window.__APP_CONFIG__;
 
   const toggle = () => {
@@ -23,30 +29,50 @@ export function Header() {
   return (
     <header className="app-header">
       <div className="app-header-brand">
+        <button
+          className="sidebar-toggle-button"
+          onClick={onToggleSidebar}
+          aria-label="メニューの表示/非表示"
+          title="メニューの表示/非表示"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <path
+              d="M3 6h18M3 12h18M3 18h18"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
         <Logo size={36} />
         <span className="app-header-title">Data Integration Modernization</span>
       </div>
       <div className="app-header-actions">
         {config.openMetadataUrl && (
           <a
-            className="header-link"
+            className="header-icon-link"
             href={config.openMetadataUrl}
             target="_blank"
             rel="noreferrer"
+            title="OpenMetadata"
+            aria-label="OpenMetadata"
           >
-            OpenMetadata
+            <OpenMetadataIcon size={22} />
           </a>
         )}
         {config.developerHubUrl && (
           <a
-            className="header-link"
+            className="header-icon-link"
             href={config.developerHubUrl}
             target="_blank"
             rel="noreferrer"
+            title="Datamesh Hub"
+            aria-label="Datamesh Hub"
           >
-            Developer Hub
+            <DatameshHubIcon size={20} />
           </a>
         )}
+        <span className="header-divider" aria-hidden="true" />
         <button
           className="notification-bell"
           onClick={toggle}

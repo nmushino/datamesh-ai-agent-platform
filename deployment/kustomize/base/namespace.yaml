@@ -4,4 +4,4 @@ metadata:
   name: ai-agent-platform
   labels:
     argocd.argoproj.io/managed-by: openshift-gitops
-    app.kubernetes.io/name: enterprise-ai-agent-platform
+    app.kubernetes.io/name: datamesh-ai-agent-platform

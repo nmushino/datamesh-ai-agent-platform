@@ -4,7 +4,7 @@ metadata:
   name: enterprise-ai-agent-alerts
   namespace: ai-agent-platform
   labels:
-    app: enterprise-ai-agent-platform
+    app: datamesh-ai-agent-platform
     prometheus: kube-prometheus
     role: alert-rules
 spec:
@@ -26,7 +26,7 @@ spec:
           annotations:
             summary: "LLM レスポンス遅延 (P95={{ $value | humanizeDuration }})"
             description: "モデル {{ $labels.model }} の P95 レイテンシが 10 秒を超えています。vLLM サービスの状態を確認してください。"
-            runbook_url: "https://github.com/quarkusdroneshop/enterprise-ai-agent-platform/wiki/runbooks/llm-latency"
+            runbook_url: "https://github.com/quarkusdroneshop/datamesh-ai-agent-platform/wiki/runbooks/llm-latency"
 
         # Tool 失敗率 > 10%
         - alert: ToolFailureRateHigh

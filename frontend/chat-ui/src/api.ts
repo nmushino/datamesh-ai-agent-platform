@@ -1,4 +1,4 @@
-import type { ChatResponse, Notification } from "./types";
+import type { ChatResponse, Notification, ScheduledTask } from "./types";
 
 function apiBaseUrl(): string {
   return window.__APP_CONFIG__?.apiBaseUrl ?? "";
@@ -66,6 +66,31 @@ export function subscribeToNotifications(
   source.onmessage = (event) => {
     try {
       onNotification(JSON.parse(event.data));
+    } catch {
+      // 不正なペイロードは無視する
+    }
+  };
+  return () => source.close();
+}
+
+export async function fetchRecentScheduledTasks(): Promise<ScheduledTask[]> {
+  const res = await fetch(`${apiBaseUrl()}/api/v1/scheduled-tasks/recent`);
+  if (!res.ok) {
+    return [];
+  }
+  const data = await res.json();
+  return data.tasks ?? [];
+}
+
+export function subscribeToScheduledTasks(
+  onTask: (t: ScheduledTask) => void
+): () => void {
+  const source = new EventSource(
+    `${apiBaseUrl()}/api/v1/scheduled-tasks/stream`
+  );
+  source.onmessage = (event) => {
+    try {
+      onTask(JSON.parse(event.data));
     } catch {
       // 不正なペイロードは無視する
     }

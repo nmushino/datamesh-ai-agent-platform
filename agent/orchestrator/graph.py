@@ -3,6 +3,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.graph import StateGraph, END
 
 from agent.common.state import AgentState
+from agent.common.llm import sum_tokens
 from agent.orchestrator.router import classify_intent, route_to_agent
 from agent.schema_agent.agent import create_schema_agent
 from agent.search_agent.agent import create_search_agent
@@ -37,10 +38,12 @@ def schema_agent_node(state: AgentState) -> dict:
     log.info("schema_agent_invoked", thread_id=state.get("thread_id"))
     agent = _get_agent("schema")
     result = agent.invoke({"messages": state["messages"]})
+    new_messages = result["messages"][len(state["messages"]):]
     return {
-        "messages": result["messages"][len(state["messages"]):],
+        "messages": new_messages,
         "active_agent": "schema",
         "agent_output": {"messages": [m.content for m in result["messages"][-1:]]},
+        "token_usage": sum_tokens(new_messages),
     }
 
 
@@ -48,10 +51,12 @@ def search_agent_node(state: AgentState) -> dict:
     log.info("search_agent_invoked", thread_id=state.get("thread_id"))
     agent = _get_agent("search")
     result = agent.invoke({"messages": state["messages"]})
+    new_messages = result["messages"][len(state["messages"]):]
     return {
-        "messages": result["messages"][len(state["messages"]):],
+        "messages": new_messages,
         "active_agent": "search",
         "agent_output": {"messages": [m.content for m in result["messages"][-1:]]},
+        "token_usage": sum_tokens(new_messages),
     }
 
 
@@ -71,6 +76,7 @@ def registration_agent_node(state: AgentState) -> dict:
         "requires_approval": requires_approval,
         "approval_action": last_content if requires_approval else "",
         "agent_output": {"messages": [m.content for m in output_messages[-1:]]},
+        "token_usage": sum_tokens(output_messages),
     }
 
 

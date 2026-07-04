@@ -13,3 +13,5 @@ class AgentState(TypedDict):
     thread_id: str
     user_id: str
     user_roles: list[str]
+    # Annotatedなし(累積せず毎ターン上書き) = このターンで使用したトークン数のみを保持する
+    token_usage: int

@@ -52,6 +52,16 @@ spec:
                 configMapKeyRef:
                   name: ai-agent-config
                   key: kafka-bootstrap-servers
+            - name: SCHEDULED_TASK_TABLES
+              valueFrom:
+                configMapKeyRef:
+                  name: ai-agent-config
+                  key: scheduled-task-tables
+            - name: SCHEDULED_TASK_INTERVAL_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: ai-agent-config
+                  key: scheduled-task-interval-seconds
             - name: OPENMETADATA_JWT_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -92,10 +102,13 @@ metadata:
   name: ai-agent-config
   namespace: ai-agent-platform
 data:
-  # OpenShift AI (RHOAI) + KServe InferenceService (vLLM CPU) で Qwen3-4B を提供
-  vllm-base-url: "http://qwen3-4b-predictor/v1"
-  vllm-model: "qwen3-4b"
+  # OpenShift AI (RHOAI) + KServe InferenceService (vLLM CPU) で Qwen3-8B を提供
+  vllm-base-url: "http://qwen3-8b-predictor/v1"
+  vllm-model: "qwen3-8b"
   # OpenMetadata / Kafka は openmetadata / quarkusdroneshop-demo namespace の既存インスタンスを共用する
   openmetadata-host: "http://openmetadata.openmetadata.svc.cluster.local:8585"
   business-api-url: "http://business-api:8080"
   kafka-bootstrap-servers: "kafka-cluster-kafka-bootstrap.quarkusdroneshop-demo.svc.cluster.local:9092"
+  # Agentによる定期チェック対象テーブル(カンマ区切りの完全修飾名)。空の場合は定期チェックを無効化する
+  scheduled-task-tables: ""
+  scheduled-task-interval-seconds: "300"

@@ -42,7 +42,7 @@ from tools.filesystem.filesystem_tools import (
 )
 
 _SYSTEM_PROMPT = """\
-あなたは Enterprise AI Agent Platform のプラットフォーム運用エージェントです。
+あなたは Datamesh AI Agent Platform のプラットフォーム運用エージェントです。
 
 ## 責任
 - OpenShift クラスターの状態監視と障害対応支援

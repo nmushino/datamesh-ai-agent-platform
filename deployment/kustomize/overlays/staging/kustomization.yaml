@@ -1,7 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: ai-agent-platform-staging
+namespace: ai-agent-platform
 
 bases:
   - ../../base
@@ -24,13 +24,13 @@ patches:
 
 images:
   - name: quay.io/droneplatform/ai-agent-orchestrator
-    newName: image-registry.openshift-image-registry.svc:5000/ai-agent-platform-staging/ai-agent-orchestrator
+    newName: image-registry.openshift-image-registry.svc:5000/ai-agent-platform/ai-agent-orchestrator
     newTag: "staging"
   - name: quay.io/droneplatform/business-api
-    newName: image-registry.openshift-image-registry.svc:5000/ai-agent-platform-staging/business-api
+    newName: image-registry.openshift-image-registry.svc:5000/ai-agent-platform/business-api
     newTag: "staging"
   - name: quay.io/droneplatform/chat-ui
-    newName: image-registry.openshift-image-registry.svc:5000/ai-agent-platform-staging/chat-ui
+    newName: image-registry.openshift-image-registry.svc:5000/ai-agent-platform/chat-ui
     newTag: "staging"
 
 labels:

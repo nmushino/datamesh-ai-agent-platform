@@ -1,4 +1,4 @@
-# Enterprise AI Agent Platform
+# Datamesh AI Agent Platform
 
 OpenShift AI 上で動作する、OpenMetadata を中心としたエンタープライズ AI エージェントプラットフォームです。
 
@@ -59,13 +59,16 @@ OpenMetadata             Quarkus API
 # 開発環境起動
 ./scripts/dev.sh
 
+# chat-ui のみローカルで起動 (画面開発用、Keycloak認証は自動でスキップ)
+./scripts/chat-ui.sh
+
 # デプロイ
 ./scripts/deploy.sh
 ```
 
 ---
 
-# Enterprise AI Agent Platform
+# Datamesh AI Agent Platform
 
 An enterprise AI agent platform centered on OpenMetadata, running on OpenShift AI.
 
@@ -125,6 +128,9 @@ OpenMetadata             Quarkus API
 ```bash
 # Start the development environment
 ./scripts/dev.sh
+
+# Run chat-ui locally only (for UI development, Keycloak auth is skipped automatically)
+./scripts/chat-ui.sh
 
 # Deploy
 ./scripts/deploy.sh

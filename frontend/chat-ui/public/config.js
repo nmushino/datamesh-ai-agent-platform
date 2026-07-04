@@ -3,7 +3,7 @@
 window.__APP_CONFIG__ = {
   apiBaseUrl: "http://localhost:8000",
   keycloakUrl: "http://localhost:8180",
-  keycloakRealm: "drone-platform",
+  keycloakRealm: "ai-agent",
   keycloakClientId: "chat-ui",
   openMetadataUrl: "http://localhost:8585",
   developerHubUrl: "http://localhost:7007",

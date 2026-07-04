@@ -1,4 +1,4 @@
-# Book: Enterprise AI Agent Platform 設計ドキュメント
+# Book: Datamesh AI Agent Platform 設計ドキュメント
 
 本ディレクトリは、プラットフォームの設計思想から実装詳細まで体系的に記述したドキュメント集です。
 

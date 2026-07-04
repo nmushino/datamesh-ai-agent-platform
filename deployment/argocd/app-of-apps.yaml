@@ -1,16 +1,16 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: enterprise-ai-agent-platform
+  name: datamesh-ai-agent-platform
   namespace: openshift-gitops
   labels:
-    app.kubernetes.io/name: enterprise-ai-agent-platform
+    app.kubernetes.io/name: datamesh-ai-agent-platform
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
   source:
-    repoURL: https://github.com/quarkusdroneshop/enterprise-ai-agent-platform
+    repoURL: https://github.com/quarkusdroneshop/datamesh-ai-agent-platform
     targetRevision: main
     path: deployment/argocd/apps
   destination:

@@ -1,5 +1,5 @@
 global:
-  namespace: ai-agent-platform-prod
+  namespace: ai-agent-platform
 
 aiAgent:
   replicas: 3

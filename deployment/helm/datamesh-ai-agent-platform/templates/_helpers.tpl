@@ -5,7 +5,7 @@
 app.kubernetes.io/name: {{ .Chart.Name }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
-app.kubernetes.io/part-of: enterprise-ai-agent-platform
+app.kubernetes.io/part-of: datamesh-ai-agent-platform
 helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
 {{- end }}
 

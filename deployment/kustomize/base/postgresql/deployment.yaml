@@ -48,8 +48,9 @@ spec:
                   key: password
             - name: POSTGRESQL_DATABASE
               value: dronedb
-          # dronedb 以外に agentdb / keycloak_db も同一インスタンス上に必要なため起動時に作成する
-          # (OpenMetadata は openmetadata namespace の既存インスタンスを使うため openmetadata_db は不要)
+          # dronedb 以外に agentdb も同一インスタンス上に必要なため起動時に作成する
+          # (OpenMetadata/Keycloak は共有namespaceの既存インスタンスを使うため
+          #  openmetadata_db / keycloak_db は不要)
           lifecycle:
             postStart:
               exec:
@@ -62,8 +63,6 @@ spec:
                       psql -U postgres -c "CREATE DATABASE dronedb";
                     psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'agentdb'" | grep -q 1 ||
                       psql -U postgres -c "CREATE DATABASE agentdb";
-                    psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'keycloak_db'" | grep -q 1 ||
-                      psql -U postgres -c "CREATE DATABASE keycloak_db";
           volumeMounts:
             - name: data
               mountPath: /var/lib/pgsql/data

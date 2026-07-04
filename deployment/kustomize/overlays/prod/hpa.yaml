@@ -3,7 +3,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: ai-agent-orchestrator-hpa
-  namespace: ai-agent-platform-prod
+  namespace: ai-agent-platform
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
@@ -29,7 +29,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: business-api-hpa
-  namespace: ai-agent-platform-prod
+  namespace: ai-agent-platform
 spec:
   scaleTargetRef:
     apiVersion: apps/v1

@@ -1,4 +1,4 @@
-# Enterprise AI Agent Platform — Claude Code 作業指示
+# Datamesh AI Agent Platform — Claude Code 作業指示
 
 > このファイルは `.claude/` の優先命令です。セッション開始時に必ず読むこと。
 
@@ -108,7 +108,7 @@ tests/          テストコード (unit / integration)
 
 ```bash
 # 実行方法
-cd enterprise-ai-agent-platform
+cd datamesh-ai-agent-platform
 pytest tests/ -v --cov=tools --cov=agent --cov-report=term-missing
 
 # カバレッジ最低ライン: 70%

@@ -74,7 +74,7 @@ from opentelemetry import trace
 from functools import wraps
 from typing import Any, Callable
 
-tracer = trace.get_tracer("enterprise-ai-agent-platform.tools")
+tracer = trace.get_tracer("datamesh-ai-agent-platform.tools")
 
 def trace_tool(tool_name: str):
     """Tool 実行を自動でトレースするデコレーター。"""

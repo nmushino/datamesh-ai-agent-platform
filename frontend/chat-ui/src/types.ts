@@ -3,6 +3,8 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   createdAt: number;
+  tokenUsage?: number;
+  errorReason?: string;
 }
 
 export interface Thread {
@@ -10,6 +12,7 @@ export interface Thread {
   title: string;
   messages: ChatMessage[];
   createdAt: number;
+  updatedAt: number;
 }
 
 export interface ChatResponse {
@@ -19,6 +22,7 @@ export interface ChatResponse {
   active_agent: string;
   requires_approval: boolean;
   approval_action: string;
+  token_usage: number;
 }
 
 export interface Notification {
@@ -27,6 +31,15 @@ export interface Notification {
   message?: string;
   timestamp?: string;
   [key: string]: unknown;
+}
+
+export interface ScheduledTask {
+  id: string;
+  task_name: string;
+  fqn: string;
+  status: "ok" | "changed" | "error";
+  message: string;
+  timestamp: string;
 }
 
 declare global {

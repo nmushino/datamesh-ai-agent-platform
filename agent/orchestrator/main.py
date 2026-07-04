@@ -16,7 +16,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from agent.orchestrator.graph import create_graph
-from agent.orchestrator.notifications import get_bridge
+from agent.orchestrator.notifications import get_bridge as get_notification_bridge
+from agent.orchestrator.scheduled_tasks import get_bridge as get_scheduled_task_bridge
 
 log = structlog.get_logger()
 
@@ -53,10 +54,12 @@ async def lifespan(app: FastAPI):
     _graph = create_graph(checkpointer=checkpointer)
     log.info("graph_initialized")
 
-    get_bridge().start(asyncio.get_event_loop())
+    get_notification_bridge().start(asyncio.get_event_loop())
+    get_scheduled_task_bridge().start(asyncio.get_event_loop())
 
     yield
-    get_bridge().stop()
+    get_notification_bridge().stop()
+    get_scheduled_task_bridge().stop()
     _checkpointer_stack.close()
 
 
@@ -89,6 +92,7 @@ class ChatResponse(BaseModel):
     active_agent: str
     requires_approval: bool = False
     approval_action: str = ""
+    token_usage: int = 0
 
 
 class ApprovalRequest(BaseModel):
@@ -159,6 +163,7 @@ async def chat(req: ChatRequest):
             active_agent=result.get("active_agent", ""),
             requires_approval=result.get("requires_approval", False),
             approval_action=result.get("approval_action", ""),
+            token_usage=result.get("token_usage", 0),
         ).model_dump()
         yield f"data: {json.dumps(payload)}\n\n"
 
@@ -185,17 +190,42 @@ def approve(req: ApprovalRequest):
 
 @app.get("/api/v1/notifications/recent")
 def notifications_recent():
-    return {"notifications": get_bridge().recent()}
+    return {"notifications": get_notification_bridge().recent()}
 
 
 @app.get("/api/v1/notifications/stream")
 async def notifications_stream():
-    bridge = get_bridge()
+    bridge = get_notification_bridge()
     queue = bridge.subscribe()
 
     async def event_generator():
         try:
             # 接続直後は既知の直近通知をまとめて送る
+            for item in bridge.recent():
+                yield f"data: {json.dumps(item)}\n\n"
+            while True:
+                item = await queue.get()
+                yield f"data: {json.dumps(item)}\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            bridge.unsubscribe(queue)
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.get("/api/v1/scheduled-tasks/recent")
+def scheduled_tasks_recent():
+    return {"tasks": get_scheduled_task_bridge().recent()}
+
+
+@app.get("/api/v1/scheduled-tasks/stream")
+async def scheduled_tasks_stream():
+    bridge = get_scheduled_task_bridge()
+    queue = bridge.subscribe()
+
+    async def event_generator():
+        try:
             for item in bridge.recent():
                 yield f"data: {json.dumps(item)}\n\n"
             while True:

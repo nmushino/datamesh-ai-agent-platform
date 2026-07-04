@@ -24,12 +24,12 @@ deployment/
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: enterprise-ai-agent-platform
+  name: datamesh-ai-agent-platform
   namespace: openshift-gitops
 spec:
   project: default
   source:
-    repoURL: https://github.com/quarkusdroneshop/enterprise-ai-agent-platform
+    repoURL: https://github.com/quarkusdroneshop/datamesh-ai-agent-platform
     targetRevision: main
     path: deployment/argocd
   destination:
@@ -122,7 +122,7 @@ resources:
 - service.yaml
 - configmap.yaml
 commonLabels:
-  app.kubernetes.io/name: enterprise-ai-agent-platform
+  app.kubernetes.io/name: datamesh-ai-agent-platform
   app.kubernetes.io/managed-by: argocd
 
 ---
@@ -131,7 +131,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 bases:
 - ../../base
-namespace: ai-agent-platform-prod
+namespace: ai-agent-platform
 patches:
 - target:
     kind: Deployment
@@ -172,6 +172,6 @@ oc create secret generic agent-db-secret \
 oc apply -f deployment/argocd/app-of-apps.yaml -n openshift-gitops
 
 # 5. 同期確認
-argocd app sync enterprise-ai-agent-platform
-argocd app wait enterprise-ai-agent-platform --health
+argocd app sync datamesh-ai-agent-platform
+argocd app wait datamesh-ai-agent-platform --health
 ```

@@ -33,7 +33,7 @@
 ```markdown
 <!-- CLAUDE.md (プロジェクトルート) -->
 
-# Enterprise AI Agent Platform
+# Datamesh AI Agent Platform
 
 ## 最重要原則
 1. Tool-First: 外部操作は必ず @tool で定義する
@@ -129,7 +129,7 @@ chapter08 の CustomerResource を参考に実装してください。
 ```markdown
 # Developer プロンプト
 
-このプロジェクトは Enterprise AI Agent Platform です。
+このプロジェクトは Datamesh AI Agent Platform です。
 実装する際は以下を必ず守ってください：
 
 ## Tool 実装チェックリスト

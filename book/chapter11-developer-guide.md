@@ -18,8 +18,8 @@ oc version          # 4.14+
 
 ```bash
 # 1. リポジトリ取得
-git clone https://github.com/quarkusdroneshop/enterprise-ai-agent-platform
-cd enterprise-ai-agent-platform
+git clone https://github.com/quarkusdroneshop/datamesh-ai-agent-platform
+cd datamesh-ai-agent-platform
 
 # 2. 環境変数設定
 cp .env.example .env

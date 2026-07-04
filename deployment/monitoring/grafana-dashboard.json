@@ -8,7 +8,7 @@
       "pluginId": "prometheus"
     }
   ],
-  "title": "Enterprise AI Agent Platform",
+  "title": "Datamesh AI Agent Platform",
   "uid": "enterprise-ai-agent",
   "tags": ["ai-agent", "openshift", "langraph"],
   "timezone": "Asia/Tokyo",

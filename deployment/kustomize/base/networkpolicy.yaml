@@ -38,11 +38,11 @@ spec:
               app: business-api
       ports:
         - port: 8080
-    # OpenShift AI (RHOAI) + KServe InferenceService (vLLM CPU, Qwen3-4B)
+    # OpenShift AI (RHOAI) + KServe InferenceService (vLLM CPU, Qwen3-8B)
     - to:
         - podSelector:
             matchLabels:
-              serving.kserve.io/inferenceservice: qwen3-4b
+              serving.kserve.io/inferenceservice: qwen3-8b
       ports:
         - port: 8080
     # Ollama (フォールバック用、要否は要検討)
@@ -124,12 +124,14 @@ spec:
               kubernetes.io/metadata.name: openmetadata
       ports:
         - port: 8585
+    # Keycloak は keycloak namespace の既存インスタンスを共用する
     - to:
-        - podSelector:
+        - namespaceSelector:
             matchLabels:
-              app: keycloak
+              kubernetes.io/metadata.name: keycloak
       ports:
         - port: 8080
+        - port: 8443
     - to:
         - namespaceSelector:
             matchLabels:

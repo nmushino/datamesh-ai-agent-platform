@@ -1,16 +1,17 @@
-# OpenShift AI (RHOAI) + KServe(RawDeployment) + vLLM CPU で Qwen3-4B を提供する
+# OpenShift AI (RHOAI) + KServe(RawDeployment) + vLLM CPU で Qwen3-8B を提供する
 # GPUなし単一ノードのsandbox向け (量子化はCUDA前提のため未使用、bfloat16のままCPU推論)
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: qwen3-4b-model-pvc
+  name: qwen3-8b-model-pvc
   namespace: ai-agent-platform
 spec:
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 30Gi
+      # 8Bはbfloat16で約16GiB。モデル本体+作業領域の余裕を見て40Giに拡張
+      storage: 40Gi
 ---
 # 初回のみ HuggingFace Hub からモデルを取得して永続化する
 # (InferenceServiceのstorageUriをhf://にすると、EmptyDirのephemeral-storage枯渇で
@@ -18,7 +19,7 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: qwen3-4b-model-download
+  name: qwen3-8b-model-download
   namespace: ai-agent-platform
 spec:
   backoffLimit: 3
@@ -29,7 +30,7 @@ spec:
         - name: download
           image: registry.redhat.io/rhoai/odh-kserve-storage-initializer-rhel9@sha256:83bebb2ea3ef6285355a45c56af393d3cec4cb9802717c436515f283bf806845
           args:
-            - "hf://Qwen/Qwen3-4B"
+            - "hf://Qwen/Qwen3-8B"
             - "/mnt/models"
           env:
             - name: HF_HUB_ENABLE_HF_TRANSFER
@@ -47,7 +48,7 @@ spec:
       volumes:
         - name: model-storage
           persistentVolumeClaim:
-            claimName: qwen3-4b-model-pvc
+            claimName: qwen3-8b-model-pvc
 ---
 apiVersion: serving.kserve.io/v1alpha1
 kind: ServingRuntime
@@ -83,20 +84,22 @@ spec:
       env:
         - name: HF_HOME
           value: /tmp/hf_home
+        # 8Bはトークンあたりのhidden sizeが4Bの約2倍のためKVキャッシュ容量も増やす
         - name: VLLM_CPU_KVCACHE_SPACE
-          value: "4"
+          value: "6"
       image: registry.redhat.io/rhaii/vllm-cpu-rhel9@sha256:0ec0f5ff9a5ff263f58db0cfb19e3d7eef24b94c2d8629fe5145f5a8747e28c9
       name: kserve-container
       ports:
         - containerPort: 8080
           protocol: TCP
       resources:
+        # 8Bはbfloat16で重み約16GiB。4B時(12/16Gi)から拡張
         requests:
           cpu: "4"
-          memory: 12Gi
+          memory: 24Gi
         limits:
           cpu: "8"
-          memory: 16Gi
+          memory: 32Gi
   multiModel: false
   supportedModelFormats:
     - autoSelect: true
@@ -105,7 +108,7 @@ spec:
 apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService
 metadata:
-  name: qwen3-4b
+  name: qwen3-8b
   namespace: ai-agent-platform
   annotations:
     # このRHOAIバージョンはRawDeploymentのみサポート(Serverless/ServiceMesh不要)
@@ -116,13 +119,13 @@ spec:
       modelFormat:
         name: vLLM
       runtime: vllm-cpu-x86-runtime
-      storageUri: "pvc://qwen3-4b-model-pvc/"
+      storageUri: "pvc://qwen3-8b-model-pvc/"
       resources:
         requests:
           cpu: "4"
-          memory: 12Gi
+          memory: 24Gi
         limits:
           cpu: "8"
-          memory: 16Gi
+          memory: 32Gi
     minReplicas: 1
     maxReplicas: 1

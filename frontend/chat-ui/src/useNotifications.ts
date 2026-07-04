@@ -8,9 +8,13 @@ export function useNotifications() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchRecentNotifications().then((items) => {
-      if (!cancelled) setNotifications(items);
-    });
+    fetchRecentNotifications()
+      .then((items) => {
+        if (!cancelled) setNotifications(items);
+      })
+      .catch(() => {
+        // バックエンド未接続時などは黙って無視する(通知が0件のまま)
+      });
 
     const unsubscribe = subscribeToNotifications((n) => {
       setNotifications((prev) => [n, ...prev].slice(0, 50));
