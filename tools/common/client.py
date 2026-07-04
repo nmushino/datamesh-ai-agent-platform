@@ -2,6 +2,7 @@ import os
 import httpx
 import structlog
 from functools import lru_cache
+from urllib.parse import quote_plus
 
 from metadata.ingestion.ometa.ometa_api import OpenMetadata
 from metadata.generated.schema.entity.services.connections.metadata.openMetadataConnection import (
@@ -43,6 +44,9 @@ class OpenMetadataClientWrapper:
         return [t.dict() for t in tables]
 
     def search_assets(self, query: str, asset_type: str = "all", limit: int = 10) -> list[dict]:
+        # es_search_from_fqn requires an actual entity class (e.g. Table) since it keys
+        # ES_INDEX_MAP by entity_type.__name__, so it can't express a cross-type "all"
+        # search. Call the raw OpenMetadata search API directly instead.
         index_map = {
             "table":    "table_search_index",
             "topic":    "topic_search_index",
@@ -50,12 +54,12 @@ class OpenMetadataClientWrapper:
             "all":      "all",
         }
         index = index_map.get(asset_type, "all")
-        results = self._client.es_search_from_fqn(
-            entity_type=asset_type if asset_type != "all" else None,
-            fqn_search_string=query,
-            size=limit,
+        q = quote_plus(query) if query else "*"
+        response = self._client.client.get(
+            f"/search/query?q={q}&index={index}&size={limit}&deleted=false"
         )
-        return [r.dict() for r in (results or [])]
+        hits = (response or {}).get("hits", {}).get("hits", [])
+        return [hit.get("_source", {}) for hit in hits]
 
     def create_or_update_table(self, request: dict) -> dict:
         from metadata.generated.schema.api.data.createTable import CreateTableRequest

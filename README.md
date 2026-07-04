@@ -6,7 +6,7 @@ OpenShift AI 上で動作する、OpenMetadata を中心としたエンタープ
 
 ```
             OpenShift AI
-          (Granite / Llama)
+          (Qwen3 / Llama)
                  │
           AI Agent (LangGraph)
                  │
@@ -73,7 +73,7 @@ An enterprise AI agent platform centered on OpenMetadata, running on OpenShift A
 
 ```
             OpenShift AI
-          (Granite / Llama)
+          (Qwen3 / Llama)
                  │
           AI Agent (LangGraph)
                  │

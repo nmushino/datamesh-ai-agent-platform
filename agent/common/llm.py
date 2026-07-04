@@ -11,4 +11,7 @@ def get_llm(model: str | None = None, temperature: float = 0) -> ChatOpenAI:
         model=model or os.environ["VLLM_MODEL"],
         temperature=temperature,
         max_tokens=2048,
+        # Qwen3のthinking mode(<think>...</think>の推論トレース)はCPU推論では
+        # 応答時間を大幅に伸ばすため無効化する
+        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
     )

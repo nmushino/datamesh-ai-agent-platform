@@ -109,8 +109,20 @@ def ready():
     return {"status": "ready"}
 
 
-@app.post("/api/v1/chat", response_model=ChatResponse)
-def chat(req: ChatRequest):
+def _invoke_graph(req: ChatRequest, thread_id: str, config: dict) -> dict:
+    return _graph.invoke(
+        {
+            "messages": [HumanMessage(content=req.message)],
+            "thread_id": thread_id,
+            "user_id": req.user_id,
+            "user_roles": req.user_roles,
+        },
+        config=config,
+    )
+
+
+@app.post("/api/v1/chat")
+async def chat(req: ChatRequest):
     thread_id = req.thread_id or str(uuid.uuid4())
     config = {
         "configurable": {
@@ -121,31 +133,36 @@ def chat(req: ChatRequest):
 
     log.info("chat_request", thread_id=thread_id, user=req.user_id)
 
-    try:
-        result = _graph.invoke(
-            {
-                "messages": [HumanMessage(content=req.message)],
-                "thread_id": thread_id,
-                "user_id": req.user_id,
-                "user_roles": req.user_roles,
-            },
-            config=config,
-        )
-    except Exception as e:
-        log.error("chat_failed", error=str(e), thread_id=thread_id)
-        raise HTTPException(500, f"エージェント実行エラー: {str(e)}")
+    async def event_generator():
+        loop = asyncio.get_event_loop()
+        future = loop.run_in_executor(None, _invoke_graph, req, thread_id, config)
+        # CPU推論は数十秒かかることがあるため、手前のロードバランサの
+        # アイドルタイムアウト(接続に一定時間データが流れないと切断される)に
+        # 引っかからないよう、完了まで定期的にコメント行を流し続ける
+        while not future.done():
+            yield ": keep-alive\n\n"
+            await asyncio.sleep(15)
 
-    last_message = result["messages"][-1]
-    reply = last_message.content if hasattr(last_message, "content") else str(last_message)
+        try:
+            result = future.result()
+        except Exception as e:
+            log.error("chat_failed", error=str(e), thread_id=thread_id)
+            yield f"data: {json.dumps({'error': f'エージェント実行エラー: {e}', 'thread_id': thread_id})}\n\n"
+            return
 
-    return ChatResponse(
-        thread_id=thread_id,
-        reply=reply,
-        intent=result.get("intent", "unknown"),
-        active_agent=result.get("active_agent", ""),
-        requires_approval=result.get("requires_approval", False),
-        approval_action=result.get("approval_action", ""),
-    )
+        last_message = result["messages"][-1]
+        reply = last_message.content if hasattr(last_message, "content") else str(last_message)
+        payload = ChatResponse(
+            thread_id=thread_id,
+            reply=reply,
+            intent=result.get("intent", "unknown"),
+            active_agent=result.get("active_agent", ""),
+            requires_approval=result.get("requires_approval", False),
+            approval_action=result.get("approval_action", ""),
+        ).model_dump()
+        yield f"data: {json.dumps(payload)}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.post("/api/v1/approve")

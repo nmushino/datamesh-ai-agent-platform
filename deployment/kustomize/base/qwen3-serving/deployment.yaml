@@ -70,7 +70,9 @@ spec:
         - --model=/mnt/models
         - --served-model-name={{.Name}}
         - --dtype=bfloat16
-        - --max-model-len=4096
+        # ツール定義込みのシステムプロンプト(実測約2000トークン)+出力上限を
+        # 余裕を持って収める必要があるため4096から引き上げる
+        - --max-model-len=8192
         # tool-calling (create_react_agentのtool_choice=auto) を使うために必要
         - --enable-auto-tool-choice
         - --tool-call-parser=hermes

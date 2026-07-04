@@ -3,6 +3,10 @@ kind: Route
 metadata:
   name: ai-agent-orchestrator
   namespace: ai-agent-platform
+  annotations:
+    # RouterのデフォルトタイムアウトはCPU推論(Qwen3-4B)の応答時間より短く
+    # 「Failed to fetch」で接続が切られてしまうため延長する
+    haproxy.router.openshift.io/timeout: 300s
 spec:
   to:
     kind: Service

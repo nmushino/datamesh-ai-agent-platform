@@ -49,10 +49,15 @@ export default function App() {
         createdAt: Date.now(),
       });
     } catch (e) {
+      // ネットワーク断・タイムアウト時、ブラウザは "TypeError: Failed to fetch" を投げるが
+      // ユーザーには技術的な文言でなく分かりやすいメッセージを表示する
+      const isNetworkError = e instanceof TypeError;
       appendMessage(threadId, {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: `エラーが発生しました: ${(e as Error).message}`,
+        content: isNetworkError
+          ? "回答できませんでした"
+          : `エラーが発生しました: ${(e as Error).message}`,
         createdAt: Date.now(),
       });
     } finally {

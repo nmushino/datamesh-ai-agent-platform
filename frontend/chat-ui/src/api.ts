@@ -18,10 +18,34 @@ export async function sendChatMessage(
     headers,
     body: JSON.stringify({ message, thread_id: threadId }),
   });
-  if (!res.ok) {
+  if (!res.ok || !res.body) {
     throw new Error(`chat request failed: ${res.status}`);
   }
-  return res.json();
+
+  // 推論に時間がかかっても手前のロードバランサのアイドルタイムアウトで
+  // 切断されないよう、サーバーはSSE(text/event-stream)でkeep-aliveを
+  // 送りながら最終結果を "data: {...}" として返す
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let sepIndex: number;
+    while ((sepIndex = buffer.indexOf("\n\n")) !== -1) {
+      const rawEvent = buffer.slice(0, sepIndex);
+      buffer = buffer.slice(sepIndex + 2);
+      const dataLine = rawEvent.split("\n").find((line) => line.startsWith("data:"));
+      if (!dataLine) continue; // keep-aliveコメント行は無視
+      const payload = JSON.parse(dataLine.slice(5).trim());
+      if (payload.error) {
+        throw new Error(payload.error);
+      }
+      return payload as ChatResponse;
+    }
+  }
+  throw new Error("chat request failed: empty stream");
 }
 
 export async function fetchRecentNotifications(): Promise<Notification[]> {
