@@ -14,19 +14,11 @@ spec:
   workspaces:
     - name: source
   steps:
-    - name: install-deps
-      image: python:$(params.python-version)-slim
-      workingDir: $(workspaces.source.path)
-      script: |
-        #!/bin/bash
-        set -e
-        pip install --upgrade pip -q
-        # NOTE: 依存関係はルートではなく agent/ と tools/ にそれぞれ分かれている
-        pip install -r agent/requirements.txt -q
-        pip install -r tools/requirements.txt -q
-        pip install pytest pytest-cov pytest-mock -q
-
-    - name: run-tests
+    # NOTE: Tekton の各 step は同一 Pod 内でも別コンテナとして実行されるため、
+    # あるステップで pip install したパッケージは別ステップには引き継がれない
+    # (共有されるのは workspace ボリュームのみ)。そのため依存関係インストールと
+    # テスト実行は同一ステップにまとめる。
+    - name: install-and-test
       image: python:$(params.python-version)-slim
       workingDir: $(workspaces.source.path)
       env:
@@ -48,6 +40,11 @@ spec:
       script: |
         #!/bin/bash
         set -e
+        pip install --upgrade pip -q
+        # NOTE: 依存関係はルートではなく agent/ と tools/ にそれぞれ分かれている
+        pip install -r agent/requirements.txt -q
+        pip install -r tools/requirements.txt -q
+        pip install pytest pytest-cov pytest-mock -q
         python -m pytest tests/ \
           --cov=$(params.source-dir) \
           --cov-report=xml:coverage.xml \
