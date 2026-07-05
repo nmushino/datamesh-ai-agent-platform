@@ -160,10 +160,13 @@ export function ChatBody({
         <div ref={bottomRef} />
       </div>
       <div className="chat-composer">
-        {window.__APP_CONFIG__?.modelName && (
-          <div className="chat-model-label">利用モデル: {window.__APP_CONFIG__.modelName}</div>
-        )}
-        <ChatSettingsBar settings={chatSettings} onChange={onChatSettingsChange} />
+        <div className="chat-composer-header">
+          {window.__APP_CONFIG__?.modelName && (
+            <div className="chat-model-label">利用モデル: {window.__APP_CONFIG__.modelName}</div>
+          )}
+          {window.__APP_CONFIG__?.modelName && <span className="chat-composer-header-sep">|</span>}
+          <ChatSettingsBar settings={chatSettings} onChange={onChatSettingsChange} />
+        </div>
         <div className="chat-input-row">
           <div className="chat-input-wrapper">
             <textarea
