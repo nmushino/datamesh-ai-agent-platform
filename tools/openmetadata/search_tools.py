@@ -9,7 +9,7 @@ log = structlog.get_logger()
 @tool
 def search_data_assets(
     query: str,
-    asset_type: Literal["table", "topic", "pipeline", "all"] = "all",
+    asset_type: Literal["table", "topic", "pipeline", "data_product", "all"] = "all",
     limit: int = 10,
 ) -> dict:
     """
@@ -17,7 +17,8 @@ def search_data_assets(
 
     Args:
         query: 検索クエリ (例: "顧客の注文履歴", "drone delivery")
-        asset_type: 絞り込む資産タイプ。"table", "topic", "pipeline", "all" のいずれか
+        asset_type: 絞り込む資産タイプ。"table", "topic", "pipeline", "data_product", "all" のいずれか。
+            「データプロダクト」を尋ねられた場合は必ず "data_product" を指定すること。
         limit: 最大取得件数 (1-100)
 
     Returns:

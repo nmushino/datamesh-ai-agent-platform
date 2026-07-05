@@ -53,10 +53,11 @@ class OpenMetadataClientWrapper:
         # ES_INDEX_MAP by entity_type.__name__, so it can't express a cross-type "all"
         # search. Call the raw OpenMetadata search API directly instead.
         index_map = {
-            "table":    "table_search_index",
-            "topic":    "topic_search_index",
-            "pipeline": "pipeline_search_index",
-            "all":      "all",
+            "table":        "table_search_index",
+            "topic":        "topic_search_index",
+            "pipeline":     "pipeline_search_index",
+            "data_product": "data_product_search_index",
+            "all":          "all",
         }
         index = index_map.get(asset_type, "all")
         q = quote_plus(query) if query else "*"
