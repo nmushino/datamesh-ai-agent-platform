@@ -22,6 +22,11 @@ class OpenMetadataClientWrapper:
             hostPort=host,
             authProvider=AuthProvider.openmetadata,
             securityConfig=OpenMetadataJWTClientConfig(jwtToken=jwt_token),
+            # NOTE: このクライアントSDK (openmetadata-ingestion 1.3.0) は pydantic v1
+            # 互換のため langchain 0.2.x と合わせて意図的に古いバージョンを使っている。
+            # サーバーは 1.13.0 のため validate_versions() のメジャー/マイナー一致
+            # チェックに引っかかるが、REST API 自体には後方互換性があるため無効化する。
+            enableVersionValidation=False,
         )
         self._client = OpenMetadata(server_config)
 
