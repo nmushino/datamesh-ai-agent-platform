@@ -39,8 +39,14 @@ spec:
     # ① ソースコードを取得
     - name: git-clone
       taskRef:
-        name: git-clone
-        kind: ClusterTask
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: git-clone
+          - name: namespace
+            value: openshift-pipelines
       params:
         - name: url
           value: $(params.git-url)
@@ -85,8 +91,14 @@ spec:
       runAfter:
         - unit-test
       taskRef:
-        name: buildah
-        kind: ClusterTask
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: buildah
+          - name: namespace
+            value: openshift-pipelines
       params:
         - name: IMAGE
           value: $(params.image-name):$(tasks.git-clone.results.commit)

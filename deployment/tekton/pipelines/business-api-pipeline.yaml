@@ -34,8 +34,14 @@ spec:
   tasks:
     - name: git-clone
       taskRef:
-        name: git-clone
-        kind: ClusterTask
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: git-clone
+          - name: namespace
+            value: openshift-pipelines
       params:
         - name: url
           value: $(params.git-url)
@@ -52,8 +58,14 @@ spec:
       runAfter:
         - git-clone
       taskRef:
-        name: maven
-        kind: ClusterTask
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: maven
+          - name: namespace
+            value: openshift-pipelines
       params:
         - name: GOALS
           value:
@@ -70,12 +82,25 @@ spec:
           workspace: maven-cache
 
     # Quarkus ビルド (JVM モード)
-    - name: maven-package
+    # NOTE: Tekton の変数展開は三項演算子等の式をサポートしないため
+    # ("$(params.x == 'a' ? 'b' : 'c')" は無効)、native-build の値で
+    # when 条件分岐する2つの Task に分割している。
+    - name: maven-package-jvm
       runAfter:
         - maven-test
+      when:
+        - input: $(params.native-build)
+          operator: notin
+          values: ["true"]
       taskRef:
-        name: maven
-        kind: ClusterTask
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: maven
+          - name: namespace
+            value: openshift-pipelines
       params:
         - name: GOALS
           value:
@@ -83,7 +108,38 @@ spec:
             - backend/business-api/pom.xml
             - package
             - -DskipTests
-            - "-Dquarkus.package.type=$(params.native-build == 'true' ? 'native' : 'uber-jar')"
+            - "-Dquarkus.package.type=uber-jar"
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+        - name: maven-settings
+          workspace: maven-cache
+
+    # Quarkus ビルド (GraalVM Native モード)
+    - name: maven-package-native
+      runAfter:
+        - maven-test
+      when:
+        - input: $(params.native-build)
+          operator: in
+          values: ["true"]
+      taskRef:
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: maven
+          - name: namespace
+            value: openshift-pipelines
+      params:
+        - name: GOALS
+          value:
+            - -f
+            - backend/business-api/pom.xml
+            - package
+            - -DskipTests
+            - "-Dquarkus.package.type=native"
       workspaces:
         - name: source
           workspace: shared-workspace
@@ -93,10 +149,17 @@ spec:
     # コンテナイメージビルド
     - name: build-image
       runAfter:
-        - maven-package
+        - maven-package-jvm
+        - maven-package-native
       taskRef:
-        name: buildah
-        kind: ClusterTask
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: buildah
+          - name: namespace
+            value: openshift-pipelines
       params:
         - name: IMAGE
           value: $(params.image-name):$(tasks.git-clone.results.commit)
