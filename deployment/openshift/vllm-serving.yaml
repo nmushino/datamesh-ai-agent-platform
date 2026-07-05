@@ -34,6 +34,11 @@ spec:
         # NOTE: vLLM のデフォルト待受ポートは 8000 だが、containerPort/probe は
         # 8080 を前提としているため、明示的に --port=8080 を指定して一致させる。
         - "--port=8080"
+        # NOTE: LangGraph エージェントが function/tool calling (tool_choice="auto")
+        # を使うため、vLLM 側でツール呼び出しパーサーを明示的に有効化する必要がある。
+        # Qwen 系モデルは hermes 形式のツール呼び出しをサポートする。
+        - "--enable-auto-tool-choice"
+        - "--tool-call-parser=hermes"
       env:
         - name: HF_HOME
           value: /tmp/hf_home
