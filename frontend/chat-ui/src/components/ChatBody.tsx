@@ -10,9 +10,18 @@ interface Props {
   onSend: (message: string) => void;
 }
 
+const TEXTAREA_MIN_HEIGHT = 44; // .chat-input の min-height と一致させる (送信ボタンとの縦位置ズレ防止)
 const TEXTAREA_COLLAPSED_MAX_HEIGHT = 160;
 // line-height 1.4 * font-size 14px * 15行 + 上下padding(10px*2)
 const TEXTAREA_EXPANDED_MAX_HEIGHT = 15 * 14 * 1.4 + 20;
+
+const QUICK_ACTIONS = [
+  "現在ある、データ資産一覧",
+  "データプロダクト一覧",
+  "最近のアクティビティ",
+  "マイデータの一覧",
+  "データ品質",
+];
 
 export function ChatBody({ thread, sending, onSend }: Props) {
   const [input, setInput] = useState("");
@@ -52,7 +61,7 @@ export function ChatBody({ thread, sending, onSend }: Props) {
     const maxHeight = expanded
       ? TEXTAREA_EXPANDED_MAX_HEIGHT
       : TEXTAREA_COLLAPSED_MAX_HEIGHT;
-    el.style.height = `${Math.min(contentHeight, maxHeight)}px`;
+    el.style.height = `${Math.max(Math.min(contentHeight, maxHeight), TEXTAREA_MIN_HEIGHT)}px`;
   }, [input, expanded]);
 
   // 折りたたみ最大高を超える入力があるときだけ展開/折りたたみボタンを表示する
@@ -87,7 +96,19 @@ export function ChatBody({ thread, sending, onSend }: Props) {
       <div className="chat-messages">
         {!thread && (
           <div className="chat-placeholder">
-            左側の「+ 新しい会話」から会話を始めてください
+            <div>左側の「+ 新しい会話」から会話を始めてください</div>
+            <div className="chat-quick-actions">
+              {QUICK_ACTIONS.map((action) => (
+                <button
+                  key={action}
+                  type="button"
+                  className="chat-quick-action"
+                  onClick={() => onSend(action)}
+                >
+                  {action}
+                </button>
+              ))}
+            </div>
           </div>
         )}
         {thread?.messages.map((m) => (
