@@ -2,7 +2,7 @@ import structlog
 from langgraph.graph import StateGraph, END
 
 from agent.common.state import AgentState
-from agent.common.llm import sum_tokens
+from agent.common.llm import get_llm, sum_tokens
 from agent.orchestrator.router import classify_intent, route_to_agent
 from agent.schema_agent.agent import create_schema_agent
 from agent.search_agent.agent import create_search_agent
@@ -31,6 +31,21 @@ def intent_classifier_node(state: AgentState) -> dict:
     intent = classify_intent(text)
     log.info("intent_classified", intent=intent, thread_id=state.get("thread_id"))
     return {"intent": intent}
+
+
+def chitchat_node(state: AgentState) -> dict:
+    # NOTE: tools を一切バインドしない生の LLM 呼び出しのため、tool_choice="auto" を
+    # 指定していても物理的にツール呼び出しが発生しえない (ReAct ループを完全に回避)。
+    # 挨拶・雑談は毎回確実に高速応答させるためのショートカット経路。
+    log.info("chitchat_invoked", thread_id=state.get("thread_id"))
+    llm = get_llm()
+    ai_message = llm.invoke(state["messages"])
+    return {
+        "messages": [ai_message],
+        "active_agent": "chitchat",
+        "agent_output": {"messages": [ai_message.content]},
+        "token_usage": sum_tokens([ai_message]),
+    }
 
 
 def schema_agent_node(state: AgentState) -> dict:
@@ -97,6 +112,7 @@ def create_graph(checkpointer=None) -> object:
     graph = StateGraph(AgentState)
 
     graph.add_node("intent_classifier", intent_classifier_node)
+    graph.add_node("chitchat", chitchat_node)
     graph.add_node("schema_agent", schema_agent_node)
     graph.add_node("search_agent", search_agent_node)
     graph.add_node("registration_agent", registration_agent_node)
@@ -108,12 +124,14 @@ def create_graph(checkpointer=None) -> object:
         "intent_classifier",
         route_to_agent,
         {
+            "chitchat":     "chitchat",
             "schema":       "schema_agent",
             "search":       "search_agent",
             "registration": "registration_agent",
         },
     )
 
+    graph.add_edge("chitchat", END)
     graph.add_edge("schema_agent", END)
     graph.add_edge("search_agent", END)
 

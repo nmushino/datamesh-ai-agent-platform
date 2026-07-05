@@ -3,6 +3,15 @@ from agent.common.state import AgentState
 
 # キーワードベースの意図分類
 _INTENT_PATTERNS: list[tuple[str, list[str]]] = [
+    # NOTE: 挨拶・雑談は最優先でチェックする。LLM の判断 (tool_choice="auto") に
+    # 任せると、指示に従わずツールを呼び出してしまうことがあり応答が遅くなる
+    # (ReAct ループが発生し vLLM への往復が増える) ため、キーワードで確実に
+    # 弾いてツール無しの chitchat_node に固定でルーティングする。
+    ("chitchat", [
+        r"^こんにちは[!!。、\s]*$", r"^こんばんは[!!。、\s]*$", r"^おはよう(ございます)?[!!。、\s]*$",
+        r"^hello[!.\s]*$", r"^hi[!.\s]*$", r"^hey[!.\s]*$",
+        r"^ありがとう(ございます)?[!!。、\s]*$", r"^よろしく(お願いします)?[!!。、\s]*$",
+    ]),
     # NOTE: metadata_search の "検索"/"テーブル.*説明" 等は汎用的すぎるため、
     # より具体的な data_search / metadata_update / data_register / data_update
     # を先にチェックしないと誤って metadata_search にマッチしてしまう。
@@ -47,6 +56,7 @@ _INTENT_PATTERNS: list[tuple[str, list[str]]] = [
 ]
 
 _INTENT_TO_AGENT = {
+    "chitchat":         "chitchat",
     "schema_sync":      "schema",
     "metadata_search":  "search",
     "metadata_update":  "schema",
