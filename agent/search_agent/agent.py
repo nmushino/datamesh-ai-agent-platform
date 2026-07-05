@@ -3,6 +3,8 @@ from langgraph.prebuilt import create_react_agent
 from agent.common.llm import get_llm
 from tools.openmetadata import (
     search_data_assets,
+    get_recent_activity,
+    get_my_data_assets,
     get_database_schema,
     get_data_lineage,
     get_quality_metrics,
@@ -13,6 +15,8 @@ _SYSTEM_PROMPT = (Path(__file__).parent.parent.parent / "prompts/search/system.m
 
 SEARCH_TOOLS = [
     search_data_assets,
+    get_recent_activity,
+    get_my_data_assets,
     get_database_schema,
     get_data_lineage,
     get_quality_metrics,

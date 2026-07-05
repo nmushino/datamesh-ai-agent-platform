@@ -142,10 +142,21 @@ async def chat(req: ChatRequest):
         future = loop.run_in_executor(None, _invoke_graph, req, thread_id, config)
         # CPU推論は数十秒かかることがあるため、手前のロードバランサの
         # アイドルタイムアウト(接続に一定時間データが流れないと切断される)に
-        # 引っかからないよう、完了まで定期的にコメント行を流し続ける
+        # 引っかからないよう、完了まで定期的にコメント行を流し続ける。
+        # NOTE: sleep(15) を直接ループ条件のポーリング間隔にすると、実際の
+        # 処理が数秒で終わっても次のポーリングまで最大15秒待たされてしまう
+        # (chitchat 等の高速応答でも常に15秒かかる不具合の原因だった)。
+        # ポーリング自体は短い間隔で行い、キープアライブ行の送出だけを
+        # 15秒間隔に間引く。
+        KEEPALIVE_INTERVAL = 15
+        POLL_INTERVAL = 0.5
+        elapsed_since_keepalive = 0.0
         while not future.done():
-            yield ": keep-alive\n\n"
-            await asyncio.sleep(15)
+            await asyncio.sleep(POLL_INTERVAL)
+            elapsed_since_keepalive += POLL_INTERVAL
+            if elapsed_since_keepalive >= KEEPALIVE_INTERVAL:
+                yield ": keep-alive\n\n"
+                elapsed_since_keepalive = 0.0
 
         try:
             result = future.result()

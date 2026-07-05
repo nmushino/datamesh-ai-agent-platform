@@ -66,6 +66,33 @@ class OpenMetadataClientWrapper:
         hits = (response or {}).get("hits", {}).get("hits", [])
         return [hit.get("_source", {}) for hit in hits]
 
+    def get_recent_activity(self, limit: int = 10) -> list[dict]:
+        response = self._client.client.get(
+            f"/search/query?q=*&index=all&size={limit}&deleted=false"
+            "&sort_field=updatedAt&sort_order=desc"
+        )
+        hits = (response or {}).get("hits", {}).get("hits", [])
+        return [hit.get("_source", {}) for hit in hits]
+
+    def get_owned_assets(self, owner_name: str, limit: int = 10) -> list[dict]:
+        # NOTE: owners.name などのフィールド指定クエリはこの ES マッピングでは
+        # 0 件になる (nested/keyword フィールドの扱いの都合と思われる)。
+        # ワイルドカードの全文検索であれば owners 内の name/displayName に
+        # ヒットすることを確認済みのため、こちらを使う。
+        q = quote_plus(f"*{owner_name}*")
+        response = self._client.client.get(
+            f"/search/query?q={q}&index=all&size={limit}&deleted=false"
+        )
+        hits = (response or {}).get("hits", {}).get("hits", [])
+        return [
+            hit.get("_source", {})
+            for hit in hits
+            if any(
+                o.get("name") == owner_name or o.get("displayName") == owner_name
+                for o in (hit.get("_source", {}).get("owners") or [])
+            )
+        ]
+
     def create_or_update_table(self, request: dict) -> dict:
         from metadata.generated.schema.api.data.createTable import CreateTableRequest
         result = self._client.create_or_update(data=CreateTableRequest(**request))
