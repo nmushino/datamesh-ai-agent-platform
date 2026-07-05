@@ -23,6 +23,7 @@ export default function App() {
   } = useThreads();
   const { tasks: scheduledTasks } = useScheduledTasks();
   const [sending, setSending] = useState(false);
+  const [statusText, setStatusText] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
 
@@ -47,8 +48,14 @@ export default function App() {
       createdAt: Date.now(),
     });
     setSending(true);
+    setStatusText(null);
     try {
-      const res = await sendChatMessage(message, threadId, auth.user?.access_token);
+      const res = await sendChatMessage(
+        message,
+        threadId,
+        auth.user?.access_token,
+        setStatusText
+      );
       appendMessage(threadId, {
         id: crypto.randomUUID(),
         role: "assistant",
@@ -70,6 +77,7 @@ export default function App() {
       });
     } finally {
       setSending(false);
+      setStatusText(null);
     }
   };
 
@@ -100,7 +108,12 @@ export default function App() {
           onResizeWidth={setSidebarWidth}
           scheduledTasks={scheduledTasks}
         />
-        <ChatBody thread={activeThread} sending={sending} onSend={handleSend} />
+        <ChatBody
+          thread={activeThread}
+          sending={sending}
+          statusText={statusText}
+          onSend={handleSend}
+        />
       </div>
       <Footer />
     </div>

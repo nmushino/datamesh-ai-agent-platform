@@ -7,7 +7,8 @@ function apiBaseUrl(): string {
 export async function sendChatMessage(
   message: string,
   threadId: string,
-  accessToken?: string
+  accessToken?: string,
+  onStatus?: (status: string) => void
 ): Promise<ChatResponse> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (accessToken) {
@@ -24,7 +25,9 @@ export async function sendChatMessage(
 
   // 推論に時間がかかっても手前のロードバランサのアイドルタイムアウトで
   // 切断されないよう、サーバーはSSE(text/event-stream)でkeep-aliveを
-  // 送りながら最終結果を "data: {...}" として返す
+  // 送りながら最終結果を "data: {...}" として返す。3秒以上かかる場合は
+  // 途中経過として {"status": "..."} だけを含むイベントが挟まることがある
+  // (最終結果には "reply" が含まれる)
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -41,6 +44,10 @@ export async function sendChatMessage(
       const payload = JSON.parse(dataLine.slice(5).trim());
       if (payload.error) {
         throw new Error(payload.error);
+      }
+      if (payload.status && !payload.reply) {
+        onStatus?.(payload.status);
+        continue;
       }
       return payload as ChatResponse;
     }

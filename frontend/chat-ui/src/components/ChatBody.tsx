@@ -7,6 +7,7 @@ import { AssistantBubble } from "./AssistantBubble";
 interface Props {
   thread: Thread | null;
   sending: boolean;
+  statusText?: string | null;
   onSend: (message: string) => void;
 }
 
@@ -23,7 +24,7 @@ const QUICK_ACTIONS = [
   "データ品質",
 ];
 
-export function ChatBody({ thread, sending, onSend }: Props) {
+export function ChatBody({ thread, sending, statusText, onSend }: Props) {
   const [input, setInput] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [needsExpand, setNeedsExpand] = useState(false);
@@ -131,6 +132,7 @@ export function ChatBody({ thread, sending, onSend }: Props) {
           <div className="chat-message chat-message-assistant">
             <div className="chat-message-bubble chat-message-pending">
               <PendingIndicator />
+              {statusText && <div className="chat-status-text">{statusText}</div>}
             </div>
           </div>
         )}

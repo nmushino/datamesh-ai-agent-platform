@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import queue
 import time
 import uuid
 import structlog
@@ -113,8 +114,23 @@ def ready():
     return {"status": "ready"}
 
 
-def _invoke_graph(req: ChatRequest, thread_id: str, config: dict) -> dict:
-    return _graph.invoke(
+# ノード名 -> 検索中表示用の日本語ラベル
+_NODE_STATUS_LABELS = {
+    "intent_classifier": "意図を判定しています...",
+    "chitchat":           "応答を生成しています...",
+    "schema_agent":       "スキーマ情報を検索しています...",
+    "search_agent":       "データ資産を検索しています...",
+    "registration_agent": "登録処理を実行しています...",
+    "human_approval":     "承認を待っています...",
+}
+
+
+def _invoke_graph(req: ChatRequest, thread_id: str, config: dict, status_q: queue.Queue) -> dict:
+    final_state: dict = {}
+    # NOTE: invoke() ではなく stream(stream_mode="updates") を使い、ノードが
+    # 完了するたびに status_q へ通知する (3秒以上かかる場合に何を検索中か
+    # フロントエンドへ表示するため)。実行は一度きりで、副作用が重複することはない。
+    for chunk in _graph.stream(
         {
             "messages": [HumanMessage(content=req.message)],
             "thread_id": thread_id,
@@ -122,7 +138,13 @@ def _invoke_graph(req: ChatRequest, thread_id: str, config: dict) -> dict:
             "user_roles": req.user_roles,
         },
         config=config,
-    )
+        stream_mode="updates",
+    ):
+        for node_name, node_output in chunk.items():
+            status_q.put(_NODE_STATUS_LABELS.get(node_name, f"{node_name} を実行しています..."))
+            if isinstance(node_output, dict):
+                final_state.update(node_output)
+    return final_state
 
 
 @app.post("/api/v1/chat")
@@ -139,7 +161,8 @@ async def chat(req: ChatRequest):
 
     async def event_generator():
         loop = asyncio.get_event_loop()
-        future = loop.run_in_executor(None, _invoke_graph, req, thread_id, config)
+        status_q: queue.Queue = queue.Queue()
+        future = loop.run_in_executor(None, _invoke_graph, req, thread_id, config, status_q)
         # CPU推論は数十秒かかることがあるため、手前のロードバランサの
         # アイドルタイムアウト(接続に一定時間データが流れないと切断される)に
         # 引っかからないよう、完了まで定期的にコメント行を流し続ける。
@@ -150,13 +173,24 @@ async def chat(req: ChatRequest):
         # 15秒間隔に間引く。
         KEEPALIVE_INTERVAL = 15
         POLL_INTERVAL = 0.5
+        STATUS_DISPLAY_THRESHOLD = 3.0
         elapsed_since_keepalive = 0.0
+        elapsed_total = 0.0
         while not future.done():
             await asyncio.sleep(POLL_INTERVAL)
             elapsed_since_keepalive += POLL_INTERVAL
+            elapsed_total += POLL_INTERVAL
             if elapsed_since_keepalive >= KEEPALIVE_INTERVAL:
                 yield ": keep-alive\n\n"
                 elapsed_since_keepalive = 0.0
+
+            # 3秒以上かかっている場合のみ、現在何を実行中か通知する
+            if elapsed_total >= STATUS_DISPLAY_THRESHOLD:
+                latest_status = None
+                while not status_q.empty():
+                    latest_status = status_q.get_nowait()
+                if latest_status:
+                    yield f"data: {json.dumps({'status': latest_status, 'thread_id': thread_id})}\n\n"
 
         try:
             result = future.result()
