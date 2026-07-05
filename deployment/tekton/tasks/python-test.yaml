@@ -21,7 +21,9 @@ spec:
         #!/bin/bash
         set -e
         pip install --upgrade pip -q
-        pip install -r $(params.source-dir)/requirements.txt -q
+        # NOTE: 依存関係はルートではなく agent/ と tools/ にそれぞれ分かれている
+        pip install -r agent/requirements.txt -q
+        pip install -r tools/requirements.txt -q
         pip install pytest pytest-cov pytest-mock -q
 
     - name: run-tests

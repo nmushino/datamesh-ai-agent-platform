@@ -12,8 +12,10 @@
 
   <properties>
     <quarkus.platform.version>3.12.0</quarkus.platform.version>
-    <maven.compiler.source>21</maven.compiler.source>
-    <maven.compiler.target>21</maven.compiler.target>
+    <!-- NOTE: このクラスターの共有 Tekton maven Task は JDK 17 イメージ (ubi9/openjdk-17)
+         のため 21 ではビルド不可。Quarkus 3.12 は Java 17 を完全サポートするため 17 に統一。 -->
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
 
