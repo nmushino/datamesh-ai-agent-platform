@@ -2,7 +2,7 @@ apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
   name: ai-agent-build-pipeline
-  namespace: ai-agent-platform
+  namespace: ai-agent-cicd
   annotations:
     tekton.dev/cicd: "true"
     tekton.dev/displayName: "AI Agent ビルド・テスト・デプロイ パイプライン"

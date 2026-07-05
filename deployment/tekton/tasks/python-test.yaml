@@ -2,7 +2,7 @@ apiVersion: tekton.dev/v1
 kind: Task
 metadata:
   name: python-test
-  namespace: ai-agent-platform
+  namespace: ai-agent-cicd
 spec:
   params:
     - name: source-dir

@@ -4,7 +4,7 @@ apiVersion: triggers.tekton.dev/v1beta1
 kind: TriggerBinding
 metadata:
   name: github-push-binding
-  namespace: ai-agent-platform
+  namespace: ai-agent-cicd
 spec:
   params:
     - name: git-url
@@ -19,7 +19,7 @@ apiVersion: triggers.tekton.dev/v1beta1
 kind: TriggerTemplate
 metadata:
   name: ai-agent-pipeline-run-template
-  namespace: ai-agent-platform
+  namespace: ai-agent-cicd
 spec:
   params:
     - name: git-url
@@ -30,7 +30,7 @@ spec:
       kind: PipelineRun
       metadata:
         generateName: ai-agent-build-
-        namespace: ai-agent-platform
+        namespace: ai-agent-cicd
       spec:
         pipelineRef:
           name: ai-agent-build-pipeline
@@ -61,7 +61,7 @@ apiVersion: triggers.tekton.dev/v1beta1
 kind: TriggerTemplate
 metadata:
   name: business-api-pipeline-run-template
-  namespace: ai-agent-platform
+  namespace: ai-agent-cicd
 spec:
   params:
     - name: git-url
@@ -72,7 +72,7 @@ spec:
       kind: PipelineRun
       metadata:
         generateName: business-api-build-
-        namespace: ai-agent-platform
+        namespace: ai-agent-cicd
       spec:
         pipelineRef:
           name: business-api-build-pipeline

@@ -4,7 +4,7 @@ apiVersion: triggers.tekton.dev/v1beta1
 kind: EventListener
 metadata:
   name: github-event-listener
-  namespace: ai-agent-platform
+  namespace: ai-agent-cicd
 spec:
   serviceAccountName: tekton-triggers-sa
   triggers:
@@ -66,7 +66,7 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: github-event-listener
-  namespace: ai-agent-platform
+  namespace: ai-agent-cicd
 spec:
   to:
     kind: Service
@@ -80,13 +80,13 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: tekton-triggers-sa
-  namespace: ai-agent-platform
+  namespace: ai-agent-cicd
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: tekton-triggers-rb
-  namespace: ai-agent-platform
+  namespace: ai-agent-cicd
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -94,4 +94,4 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: tekton-triggers-sa
-    namespace: ai-agent-platform
+    namespace: ai-agent-cicd
