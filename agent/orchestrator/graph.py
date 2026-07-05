@@ -13,9 +13,6 @@ from agent.registration_agent.agent import create_registration_agent
 
 log = structlog.get_logger()
 
-# エージェントファクトリ（(名前, thinking, max_tokens) の組み合わせごとに生成・キャッシュ）
-_AGENTS: dict = {}
-
 _AGENT_FACTORIES = {
     "schema":       create_schema_agent,
     "search":       create_search_agent,
@@ -24,10 +21,14 @@ _AGENT_FACTORIES = {
 
 
 def _get_agent(name: str, enable_thinking: bool = False, max_tokens: int = 1024):
-    key = (name, enable_thinking, max_tokens)
-    if key not in _AGENTS:
-        _AGENTS[key] = _AGENT_FACTORIES[name](enable_thinking=enable_thinking, max_tokens=max_tokens)
-    return _AGENTS[key]
+    # NOTE: 以前は (name, enable_thinking, max_tokens) キーでコンパイル済み
+    # エージェントをキャッシュしていたが、同一のコンパイル済みLangGraphオブジェクトを
+    # 複数リクエストから同時に .stream() すると、実際のvLLM応答は正常に生成されて
+    # いるにもかかわらず最終メッセージが空になる事象が確認された(単発呼び出しでは
+    # 再現せず、本番の同時アクセス下でのみ発生)。create_react_agent() 自体は
+    # グラフ構造を組み立てるだけの軽量な処理のため、リクエストごとに毎回新規生成し、
+    # 並行実行時の状態共有によるリスクを避ける。
+    return _AGENT_FACTORIES[name](enable_thinking=enable_thinking, max_tokens=max_tokens)
 
 
 # NOTE: AgentState["messages"] は Annotated[list, operator.add] で
