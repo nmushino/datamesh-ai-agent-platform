@@ -609,6 +609,14 @@ body,
   font-variant-numeric: tabular-nums;
 }
 
+.chat-model-label {
+  position: relative;
+  z-index: 2;
+  font-size: 11px;
+  color: #999;
+  margin: 0 4px 4px;
+}
+
 .chat-input-row {
   position: relative;
   z-index: 2;

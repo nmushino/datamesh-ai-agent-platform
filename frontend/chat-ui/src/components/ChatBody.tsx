@@ -114,6 +114,9 @@ export function ChatBody({ thread, sending, onSend }: Props) {
         )}
         <div ref={bottomRef} />
       </div>
+      {window.__APP_CONFIG__?.modelName && (
+        <div className="chat-model-label">利用モデル: {window.__APP_CONFIG__.modelName}</div>
+      )}
       <div className="chat-input-row">
         <div className="chat-input-wrapper">
           <textarea

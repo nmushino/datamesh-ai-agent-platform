@@ -51,6 +51,7 @@ declare global {
       keycloakClientId: string;
       openMetadataUrl: string;
       developerHubUrl: string;
+      modelName?: string;
     };
   }
 }

@@ -35,6 +35,12 @@ spec:
               value: ""
             - name: DEVELOPER_HUB_URL
               value: ""
+            - name: MODEL_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: ai-agent-vllm-config
+                  key: vllm-model-name
+                  optional: true
           resources:
             requests:
               cpu: "50m"
