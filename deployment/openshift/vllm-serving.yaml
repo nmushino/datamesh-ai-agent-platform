@@ -15,9 +15,12 @@ spec:
       autoSelect: true
   containers:
     - name: kserve-container
-      image: quay.io/rh-aiservices-bu/vllm-openai-ubi9:0.4.2
+      # NOTE: quay.io/rh-aiservices-bu/vllm-openai-ubi9 は 2023-12 で更新が止まっており
+      # 新しいモデルアーキテクチャ (Qwen3 等) を認識できず起動時にクラッシュする。
+      # 公式の vllm/vllm-openai イメージ (継続メンテナンス) を使用する。
+      image: docker.io/vllm/vllm-openai:v0.9.2
       command:
-        - python
+        - python3
         - -m
         - vllm.entrypoints.openai.api_server
       args:
@@ -25,10 +28,21 @@ spec:
         - "--dtype=float16"
         - "--max-model-len=8192"
         - "--tensor-parallel-size=1"
-        - "--served-model-name=$(MODEL_NAME)"
+        # NOTE: $(MODEL_NAME) は未定義の env 変数参照だったため、KServe が
+        # コンテナに自動注入する INFERENCE_SERVICE_NAME に置き換える。
+        - "--served-model-name=$(INFERENCE_SERVICE_NAME)"
+        # NOTE: vLLM のデフォルト待受ポートは 8000 だが、containerPort/probe は
+        # 8080 を前提としているため、明示的に --port=8080 を指定して一致させる。
+        - "--port=8080"
       env:
         - name: HF_HOME
           value: /tmp/hf_home
+        # OpenShift は任意 UID でコンテナを実行するため HOME (/) が書き込み不可。
+        # Triton (vLLM が内部で JIT カーネルに使用) はデフォルトで $HOME/.triton に
+        # キャッシュを書き込もうとして Permission denied になるため、書き込み可能な
+        # /tmp に変更する。
+        - name: HOME
+          value: /tmp
       ports:
         - containerPort: 8080
           protocol: TCP
