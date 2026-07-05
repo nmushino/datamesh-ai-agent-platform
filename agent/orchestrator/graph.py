@@ -1,4 +1,5 @@
 import contextvars
+import re
 import structlog
 from langchain_core.messages import SystemMessage
 from langgraph.graph import StateGraph, END
@@ -104,16 +105,44 @@ def intent_classifier_node(state: AgentState) -> dict:
     return {"intent": intent}
 
 
+_CONTEXT_LENGTH_RE = re.compile(
+    r"maximum context length is (\d+) tokens.*?requested (\d+) tokens \((\d+) in the messages"
+)
+
+
+def _shrink_max_tokens_for_error(error_message: str, requested_max_tokens: int) -> int | None:
+    """vLLMの'maximum context length'エラーメッセージから実際のプロンプト
+    トークン数を読み取り、上限に収まる安全なmax_tokensを計算する。
+    エラー形式が一致しない場合はNoneを返す。"""
+    m = _CONTEXT_LENGTH_RE.search(error_message)
+    if not m:
+        return None
+    model_limit, _requested_total, prompt_tokens = (int(g) for g in m.groups())
+    safety_margin = 50
+    safe_max = model_limit - prompt_tokens - safety_margin
+    if safe_max < 256:
+        return None
+    return min(safe_max, requested_max_tokens)
+
+
 def chitchat_node(state: AgentState) -> dict:
     # NOTE: tools を一切バインドしない生の LLM 呼び出しのため、tool_choice="auto" を
     # 指定していても物理的にツール呼び出しが発生しえない (ReAct ループを完全に回避)。
     # 挨拶・雑談は毎回確実に高速応答させるためのショートカット経路。
     log.info("chitchat_invoked", thread_id=state.get("thread_id"))
-    llm = get_llm(
-        enable_thinking=state.get("enable_thinking", False),
-        max_tokens=state.get("max_tokens", 1024),
-    )
-    ai_message = llm.invoke(_recent_messages(state))
+    enable_thinking = state.get("enable_thinking", False)
+    max_tokens = state.get("max_tokens", 1024)
+    messages = _recent_messages(state)
+    try:
+        llm = get_llm(enable_thinking=enable_thinking, max_tokens=max_tokens)
+        ai_message = llm.invoke(messages)
+    except Exception as e:
+        safe_max = _shrink_max_tokens_for_error(str(e), max_tokens)
+        if safe_max is None:
+            raise
+        log.warning("context_length_retry", node="chitchat", safe_max_tokens=safe_max)
+        llm = get_llm(enable_thinking=enable_thinking, max_tokens=safe_max)
+        ai_message = llm.invoke(messages)
     return {
         "messages": [ai_message],
         "active_agent": "chitchat",
@@ -122,17 +151,31 @@ def chitchat_node(state: AgentState) -> dict:
     }
 
 
-def _invoke_subagent_ensured(agent, input_messages: list) -> list:
+def _invoke_subagent_ensured(
+    agent_name: str, enable_thinking: bool, max_tokens: int, input_messages: list
+) -> list:
     """サブエージェントを実行し、必ず1件以上の新規メッセージを返す。
 
     同時アクセスで vLLM が混雑すると2回目の応答生成(ツール結果を受けての
     最終応答)が空文字を返してくることがあり(例外は発生しない)、その場合は
     同じ入力で再試行する。全て空ならフォールバックのAIMessageを返し、
-    呼び出し側の result["messages"][-1] が IndexError にならないようにする。"""
+    呼び出し側の result["messages"][-1] が IndexError にならないようにする。
+    また、選択されたmax_tokensが会話履歴と合わせてモデルのコンテキスト長を
+    超える場合は、エラーメッセージから安全なmax_tokensを算出して1回だけ
+    縮小再試行する。"""
     from langchain_core.messages import AIMessage
 
+    agent = _get_agent(agent_name, enable_thinking=enable_thinking, max_tokens=max_tokens)
     for attempt in range(3):
-        result = _invoke_subagent(agent, input_messages)
+        try:
+            result = _invoke_subagent(agent, input_messages)
+        except Exception as e:
+            safe_max = _shrink_max_tokens_for_error(str(e), max_tokens)
+            if safe_max is None:
+                raise
+            log.warning("context_length_retry", node=agent_name, safe_max_tokens=safe_max)
+            agent = _get_agent(agent_name, enable_thinking=enable_thinking, max_tokens=safe_max)
+            continue
         new_messages = result["messages"][len(input_messages):]
         if new_messages:
             return new_messages
@@ -142,13 +185,13 @@ def _invoke_subagent_ensured(agent, input_messages: list) -> list:
 
 def schema_agent_node(state: AgentState) -> dict:
     log.info("schema_agent_invoked", thread_id=state.get("thread_id"))
-    agent = _get_agent(
-        "schema",
-        enable_thinking=state.get("enable_thinking", False),
-        max_tokens=state.get("max_tokens", 1024),
-    )
     input_messages = _recent_messages(state)
-    new_messages = _invoke_subagent_ensured(agent, input_messages)
+    new_messages = _invoke_subagent_ensured(
+        "schema",
+        state.get("enable_thinking", False),
+        state.get("max_tokens", 1024),
+        input_messages,
+    )
     return {
         "messages": new_messages,
         "active_agent": "schema",
@@ -178,14 +221,14 @@ def _build_user_context_message(state: AgentState) -> SystemMessage | None:
 
 def search_agent_node(state: AgentState) -> dict:
     log.info("search_agent_invoked", thread_id=state.get("thread_id"))
-    agent = _get_agent(
-        "search",
-        enable_thinking=state.get("enable_thinking", False),
-        max_tokens=state.get("max_tokens", 1024),
-    )
     context_msg = _build_user_context_message(state)
     input_messages = ([context_msg] if context_msg else []) + _recent_messages(state)
-    new_messages = _invoke_subagent_ensured(agent, input_messages)
+    new_messages = _invoke_subagent_ensured(
+        "search",
+        state.get("enable_thinking", False),
+        state.get("max_tokens", 1024),
+        input_messages,
+    )
     return {
         "messages": new_messages,
         "active_agent": "search",
@@ -196,13 +239,13 @@ def search_agent_node(state: AgentState) -> dict:
 
 def registration_agent_node(state: AgentState) -> dict:
     log.info("registration_agent_invoked", thread_id=state.get("thread_id"))
-    agent = _get_agent(
-        "registration",
-        enable_thinking=state.get("enable_thinking", False),
-        max_tokens=state.get("max_tokens", 1024),
-    )
     input_messages = _recent_messages(state)
-    output_messages = _invoke_subagent_ensured(agent, input_messages)
+    output_messages = _invoke_subagent_ensured(
+        "registration",
+        state.get("enable_thinking", False),
+        state.get("max_tokens", 1024),
+        input_messages,
+    )
 
     # 承認フラグの検出（レスポンスに「承認」キーワードが含まれるか）
     last_content = output_messages[-1].content
