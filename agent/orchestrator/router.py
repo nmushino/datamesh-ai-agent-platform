@@ -3,15 +3,12 @@ from agent.common.state import AgentState
 
 # キーワードベースの意図分類
 _INTENT_PATTERNS: list[tuple[str, list[str]]] = [
+    # NOTE: metadata_search の "検索"/"テーブル.*説明" 等は汎用的すぎるため、
+    # より具体的な data_search / metadata_update / data_register / data_update
+    # を先にチェックしないと誤って metadata_search にマッチしてしまう。
     ("schema_sync", [
         "スキーマ.*同期", "スキーマ.*登録", "スキーマ.*反映",
         "openmetadata.*登録", "テーブル.*登録", "schema.*sync",
-    ]),
-    ("metadata_search", [
-        "テーブル.*説明", "データ.*探", "どこ.*ある", "検索",
-        "メタデータ", "説明.*教えて", "lineage", "リネージ",
-        "品質.*確認", "品質.*スコア", "search",
-        "データ資産", "資産.*一覧", "資産.*リスト", "データ.*一覧",
     ]),
     ("metadata_update", [
         "説明.*更新", "タグ.*付け", "オーナー.*変更",
@@ -23,11 +20,17 @@ _INTENT_PATTERNS: list[tuple[str, list[str]]] = [
     ]),
     ("data_search", [
         "顧客.*検索", "顧客.*探", "bom.*検索", "bom.*探",
-        "顧客.*教えて", "検索.*顧客",
+        "検索.*顧客",
     ]),
     ("data_update", [
         "顧客.*更新", "情報.*変更", "ステータス.*変更",
         "update.*customer",
+    ]),
+    ("metadata_search", [
+        "テーブル.*説明", "データ.*探", "どこ.*ある", "検索",
+        "メタデータ", "説明.*教えて", "lineage", "リネージ",
+        "品質.*確認", "品質.*スコア", "search",
+        "データ資産", "資産.*一覧", "資産.*リスト", "データ.*一覧",
     ]),
     ("lineage_check", [
         "データの流れ", "上流", "下流", "lineage", "リネージ",
