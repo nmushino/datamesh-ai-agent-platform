@@ -27,16 +27,20 @@ spec:
             - name: http
               containerPort: 8000
           env:
+            # NOTE: vLLM の URL/モデル名は ai-agent-vllm-config を使うこと
+            # (aiagent.sh の deploy() が InferenceService の実際のアドレスから
+            # 動的に生成する)。ai-agent-config 側の同名キーはポート番号を
+            # 含まない誤った固定値のプレースホルダーであり、接続できない。
             - name: VLLM_BASE_URL
               valueFrom:
                 configMapKeyRef:
-                  name: ai-agent-config
+                  name: ai-agent-vllm-config
                   key: vllm-base-url
             - name: VLLM_MODEL
               valueFrom:
                 configMapKeyRef:
-                  name: ai-agent-config
-                  key: vllm-model
+                  name: ai-agent-vllm-config
+                  key: vllm-model-name
             - name: OPENMETADATA_HOST
               valueFrom:
                 configMapKeyRef:
@@ -102,9 +106,8 @@ metadata:
   name: ai-agent-config
   namespace: ai-agent-platform
 data:
-  # OpenShift AI (RHOAI) + KServe InferenceService (vLLM CPU) で Qwen3-8B を提供
-  vllm-base-url: "http://qwen3-8b-predictor/v1"
-  vllm-model: "qwen3-8b"
+  # NOTE: vLLM の URL/モデル名は ai-agent-vllm-config (aiagent.sh の deploy() が
+  # InferenceService の実アドレスから動的生成) を使うため、ここには置かない。
   # OpenMetadata / Kafka は openmetadata / quarkusdroneshop-demo namespace の既存インスタンスを共用する
   openmetadata-host: "http://openmetadata.openmetadata.svc.cluster.local:8585"
   business-api-url: "http://business-api:8080"
