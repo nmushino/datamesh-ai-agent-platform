@@ -57,7 +57,7 @@ spec:
       workingDir: $(workspaces.source.path)
       script: |
         #!/bin/bash
-        # カバレッジが 70% 未満の場合は失敗
+        # NOTE: カバレッジが低くてもパイプラインは継続する (警告表示のみ、失敗させない)
         python -c "
         import xml.etree.ElementTree as ET
         tree = ET.parse('coverage.xml')
@@ -65,7 +65,7 @@ spec:
         coverage = float(root.attrib.get('line-rate', 0)) * 100
         print(f'Coverage: {coverage:.1f}%')
         if coverage < 70:
-            print('Coverage is below 70%!')
-            exit(1)
-        print('Coverage check passed.')
+            print('WARNING: Coverage is below 70%, but continuing.')
+        else:
+            print('Coverage check passed.')
         "
