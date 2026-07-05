@@ -117,13 +117,13 @@ def chitchat_node(state: AgentState) -> dict:
 def _invoke_subagent_ensured(agent, input_messages: list) -> list:
     """サブエージェントを実行し、必ず1件以上の新規メッセージを返す。
 
-    高負荷時に vLLM の2回目の応答生成(ツール結果を受けての最終応答)が
-    空文字を返してくることがあり、その場合は同じ入力で1回だけ再試行する。
-    再試行しても空ならフォールバックのAIMessageを返し、呼び出し側の
-    result["messages"][-1] が IndexError にならないようにする。"""
+    同時アクセスで vLLM が混雑すると2回目の応答生成(ツール結果を受けての
+    最終応答)が空文字を返してくることがあり(例外は発生しない)、その場合は
+    同じ入力で再試行する。全て空ならフォールバックのAIMessageを返し、
+    呼び出し側の result["messages"][-1] が IndexError にならないようにする。"""
     from langchain_core.messages import AIMessage
 
-    for attempt in range(2):
+    for attempt in range(3):
         result = _invoke_subagent(agent, input_messages)
         new_messages = result["messages"][len(input_messages):]
         if new_messages:
