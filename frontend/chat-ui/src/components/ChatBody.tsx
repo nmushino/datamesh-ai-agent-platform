@@ -97,6 +97,7 @@ export function ChatBody({ thread, sending, onSend }: Props) {
         {!thread && (
           <div className="chat-placeholder">
             <div>左側の「+ 新しい会話」から会話を始めてください</div>
+            <div>または下記のメニューから初めてください</div>
             <div className="chat-quick-actions">
               {QUICK_ACTIONS.map((action) => (
                 <button
