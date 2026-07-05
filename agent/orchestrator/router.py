@@ -69,13 +69,20 @@ _INTENT_TO_AGENT = {
 }
 
 
-def classify_intent(text: str) -> str:
+def classify_intent_detailed(text: str) -> tuple[str, str | None]:
+    """意図と、判定の根拠になった正規表現パターンの組を返す。
+    ステータス表示で「なぜその意図と判定したか」を示すために使う。"""
     text_lower = text.lower()
     for intent, patterns in _INTENT_PATTERNS:
         for pattern in patterns:
             if re.search(pattern, text_lower):
-                return intent
-    return "unknown"
+                return intent, pattern
+    return "unknown", None
+
+
+def classify_intent(text: str) -> str:
+    intent, _matched_pattern = classify_intent_detailed(text)
+    return intent
 
 
 def route_to_agent(state: AgentState) -> str:

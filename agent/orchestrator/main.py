@@ -193,7 +193,13 @@ def _invoke_graph(req: ChatRequest, thread_id: str, config: dict, status_q: queu
             if node_name == "intent_classifier" and isinstance(node_output, dict):
                 intent = node_output.get("intent", "unknown")
                 label = _INTENT_LABELS.get(intent, intent)
-                status_q.put(f"「{label}」と判定しました。処理を開始します...")
+                matched_pattern = node_output.get("matched_pattern") or ""
+                if matched_pattern:
+                    # 正規表現をそのまま出すと読みにくいので簡易的に整形する
+                    readable = matched_pattern.replace(".*", "…").strip("^$")
+                    status_q.put(f"「{label}」と判定しました(「{readable}」に一致)。処理を開始します...")
+                else:
+                    status_q.put(f"「{label}」と判定しました。処理を開始します...")
             else:
                 status_q.put(_NODE_STATUS_LABELS.get(node_name, f"{node_name} を実行しています..."))
             if isinstance(node_output, dict):

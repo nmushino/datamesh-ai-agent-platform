@@ -6,7 +6,7 @@ from langgraph.graph import StateGraph, END
 
 from agent.common.state import AgentState
 from agent.common.llm import get_llm, sum_tokens
-from agent.orchestrator.router import classify_intent, route_to_agent
+from agent.orchestrator.router import classify_intent_detailed, route_to_agent
 from agent.schema_agent.agent import create_schema_agent
 from agent.search_agent.agent import create_search_agent
 from agent.registration_agent.agent import create_registration_agent
@@ -100,9 +100,12 @@ def _invoke_subagent(agent, input_messages: list) -> dict:
 def intent_classifier_node(state: AgentState) -> dict:
     last_message = state["messages"][-1]
     text = last_message.content if hasattr(last_message, "content") else str(last_message)
-    intent = classify_intent(text)
-    log.info("intent_classified", intent=intent, thread_id=state.get("thread_id"))
-    return {"intent": intent}
+    intent, matched_pattern = classify_intent_detailed(text)
+    log.info(
+        "intent_classified", intent=intent, matched_pattern=matched_pattern,
+        thread_id=state.get("thread_id"),
+    )
+    return {"intent": intent, "matched_pattern": matched_pattern or ""}
 
 
 _CONTEXT_LENGTH_RE = re.compile(
