@@ -5,7 +5,7 @@ import time
 import uuid
 import structlog
 from contextlib import asynccontextmanager, ExitStack
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -15,9 +15,9 @@ from langgraph.checkpoint.postgres import PostgresSaver
 from dotenv import load_dotenv
 load_dotenv()
 
-from agent.orchestrator.graph import create_graph
-from agent.orchestrator.notifications import get_bridge as get_notification_bridge
-from agent.orchestrator.scheduled_tasks import get_bridge as get_scheduled_task_bridge
+from agent.orchestrator.graph import create_graph  # noqa: E402
+from agent.orchestrator.notifications import get_bridge as get_notification_bridge  # noqa: E402
+from agent.orchestrator.scheduled_tasks import get_bridge as get_scheduled_task_bridge  # noqa: E402
 
 log = structlog.get_logger()
 

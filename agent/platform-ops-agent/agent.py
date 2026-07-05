@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from langchain_core.prompts import ChatPromptTemplate
 from langgraph.prebuilt import create_react_agent
 
 from agent.common.llm import get_llm

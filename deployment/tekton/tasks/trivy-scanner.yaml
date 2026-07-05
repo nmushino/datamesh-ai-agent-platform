@@ -1,0 +1,22 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: trivy-scanner
+  namespace: ai-agent-cicd
+spec:
+  params:
+    - name: IMAGE
+      type: string
+      description: スキャン対象のイメージ (レジストリ/名前:タグ)
+    - name: SEVERITY
+      type: string
+      default: "CRITICAL,HIGH"
+  workspaces:
+    - name: source
+  steps:
+    - name: scan
+      image: aquasec/trivy:latest
+      script: |
+        #!/bin/sh
+        set -e
+        trivy image --exit-code 1 --severity $(params.SEVERITY) $(params.IMAGE)

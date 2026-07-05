@@ -1,11 +1,11 @@
 apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
-  name: ai-agent-build-pipeline
+  name: chat-ui-build-pipeline
   namespace: ai-agent-cicd
   annotations:
     tekton.dev/cicd: "true"
-    tekton.dev/displayName: "AI Agent ビルド・テスト・デプロイ パイプライン"
+    tekton.dev/displayName: "Chat UI (React/Vite) ビルド・デプロイ パイプライン"
 spec:
   params:
     - name: git-url
@@ -17,8 +17,9 @@ spec:
       description: Git ブランチ / タグ / コミットハッシュ
     - name: image-name
       type: string
-      default: image-registry.openshift-image-registry.svc:5000/ai-agent-platform/ai-agent-orchestrator
-      description: ビルドするイメージ名 (overlays/dev の image remap と一致させる内部レジストリ)
+      # 内部レジストリ (overlays/dev の image remap と一致させる)
+      default: image-registry.openshift-image-registry.svc:5000/ai-agent-platform/chat-ui
+      description: ビルドするイメージ名
     - name: deploy-overlay
       type: string
       default: deployment/kustomize/overlays/dev
@@ -30,11 +31,7 @@ spec:
       description: コンテナレジストリ認証情報
   results:
     - name: image-digest
-      description: ビルドされたイメージのダイジェスト
       value: $(tasks.build-image.results.IMAGE_DIGEST)
-    - name: image-url
-      description: ビルドされたイメージの URL
-      value: $(tasks.build-image.results.IMAGE_URL)
   tasks:
     # ① ソースコードを取得
     - name: git-clone
@@ -60,38 +57,10 @@ spec:
         - name: output
           workspace: shared-workspace
 
-    # ② 静的解析 (lint)
-    - name: lint
-      runAfter:
-        - git-clone
-      taskRef:
-        name: python-lint
-        kind: Task
-      params:
-        - name: source-dir
-          value: "."
-      workspaces:
-        - name: source
-          workspace: shared-workspace
-
-    # ③ 単体テスト
-    - name: unit-test
-      runAfter:
-        - lint
-      taskRef:
-        name: python-test
-        kind: Task
-      params:
-        - name: source-dir
-          value: "."
-      workspaces:
-        - name: source
-          workspace: shared-workspace
-
-    # ④ コンテナイメージをビルド & プッシュ
+    # ② コンテナイメージをビルド & プッシュ (Dockerfile 内の npm run build がテスト代わりに型チェックまで行う)
     - name: build-image
       runAfter:
-        - unit-test
+        - git-clone
       taskRef:
         resolver: cluster
         params:
@@ -105,9 +74,9 @@ spec:
         - name: IMAGE
           value: $(params.image-name):$(tasks.git-clone.results.COMMIT)
         - name: DOCKERFILE
-          value: agent/orchestrator/Dockerfile
+          value: frontend/chat-ui/Dockerfile
         - name: CONTEXT
-          value: .
+          value: frontend/chat-ui
         - name: FORMAT
           value: oci
       workspaces:
@@ -116,7 +85,7 @@ spec:
         - name: dockerconfig
           workspace: docker-credentials
 
-    # ⑤ イメージスキャン (Trivy)
+    # ③ イメージスキャン (Trivy)
     - name: image-scan
       runAfter:
         - build-image
@@ -132,7 +101,7 @@ spec:
         - name: source
           workspace: shared-workspace
 
-    # ⑥ Kustomize の image タグを更新して GitOps でデプロイ
+    # ④ Kustomize の image タグを更新して GitOps でデプロイ
     - name: update-gitops
       runAfter:
         - image-scan
@@ -154,7 +123,7 @@ spec:
   finally:
     - name: notify-on-failure
       when:
-        - input: $(tasks.unit-test.status)
+        - input: $(tasks.build-image.status)
           operator: in
           values: ["Failed"]
       taskRef:
@@ -162,8 +131,8 @@ spec:
         kind: Task
       params:
         - name: message
-          value: "AI Agent パイプラインが失敗しました: $(params.git-url) @ $(params.git-revision)"
+          value: "Chat UI パイプラインが失敗しました: $(params.git-url) @ $(params.git-revision)"
         - name: pipeline-name
-          value: "ai-agent-build-pipeline"
+          value: "chat-ui-build-pipeline"
         - name: status
           value: "Failed"

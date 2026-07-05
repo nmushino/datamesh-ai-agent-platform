@@ -40,7 +40,6 @@ def get_data_lineage(fqn: str, depth: int = 3) -> dict:
                     })
             return nodes
 
-        edges = lineage.get("downstreamEdges", []) + lineage.get("upstreamEdges", [])
         return {
             "fqn": fqn,
             "upstream": extract_nodes(lineage.get("upstreamEdges", []), "upstream"),

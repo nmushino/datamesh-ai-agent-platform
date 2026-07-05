@@ -15,7 +15,8 @@ spec:
       default: main
     - name: image-name
       type: string
-      default: quay.io/droneplatform/business-api
+      # 内部レジストリ (overlays/dev の image remap と一致させる)
+      default: image-registry.openshift-image-registry.svc:5000/ai-agent-platform/business-api
     - name: deploy-overlay
       type: string
       default: deployment/kustomize/overlays/dev
@@ -25,8 +26,9 @@ spec:
       description: "true にすると GraalVM Native ビルドを行う（時間がかかる）"
   workspaces:
     - name: shared-workspace
-    - name: maven-cache
-      description: Maven ローカルリポジトリキャッシュ
+    # NOTE: maven-cache (静的PVC) は shared-workspace (volumeClaimTemplate) と
+    # 同一 TaskRun 内で併用すると Tekton の affinity assistant が
+    # "more than one PersistentVolumeClaim is bound" で TaskRun を拒否するため削除。
     - name: docker-credentials
   results:
     - name: image-digest
@@ -42,12 +44,14 @@ spec:
             value: git-clone
           - name: namespace
             value: openshift-pipelines
+      # NOTE: このクラスターの openshift-pipelines/git-clone Task は
+      # tekton catalog 版と異なり大文字のパラメータ名を使う。
       params:
-        - name: url
+        - name: URL
           value: $(params.git-url)
-        - name: revision
+        - name: REVISION
           value: $(params.git-revision)
-        - name: deleteExisting
+        - name: DELETE_EXISTING
           value: "true"
       workspaces:
         - name: output
@@ -78,8 +82,6 @@ spec:
       workspaces:
         - name: source
           workspace: shared-workspace
-        - name: maven-settings
-          workspace: maven-cache
 
     # Quarkus ビルド (JVM モード)
     # NOTE: Tekton の変数展開は三項演算子等の式をサポートしないため
@@ -112,8 +114,6 @@ spec:
       workspaces:
         - name: source
           workspace: shared-workspace
-        - name: maven-settings
-          workspace: maven-cache
 
     # Quarkus ビルド (GraalVM Native モード)
     - name: maven-package-native
@@ -143,8 +143,6 @@ spec:
       workspaces:
         - name: source
           workspace: shared-workspace
-        - name: maven-settings
-          workspace: maven-cache
 
     # コンテナイメージビルド
     - name: build-image
@@ -162,7 +160,7 @@ spec:
             value: openshift-pipelines
       params:
         - name: IMAGE
-          value: $(params.image-name):$(tasks.git-clone.results.commit)
+          value: $(params.image-name):$(tasks.git-clone.results.COMMIT)
         - name: DOCKERFILE
           value: backend/business-api/src/main/docker/Dockerfile.jvm
         - name: CONTEXT
@@ -184,7 +182,7 @@ spec:
         - name: image-name
           value: $(params.image-name)
         - name: new-tag
-          value: $(tasks.git-clone.results.commit)
+          value: $(tasks.git-clone.results.COMMIT)
         - name: overlay-path
           value: $(params.deploy-overlay)
       workspaces:

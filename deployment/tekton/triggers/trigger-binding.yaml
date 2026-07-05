@@ -40,7 +40,7 @@ spec:
           - name: git-revision
             value: $(tt.params.git-revision)
           - name: image-name
-            value: quay.io/droneplatform/ai-agent-orchestrator
+            value: image-registry.openshift-image-registry.svc:5000/ai-agent-platform/ai-agent-orchestrator
           - name: deploy-overlay
             value: "deployment/kustomize/overlays/dev"
         workspaces:
@@ -54,7 +54,49 @@ spec:
                     storage: 1Gi
           - name: docker-credentials
             secret:
-              secretName: quay-credentials
+              secretName: internal-registry-credentials
+---
+# Chat UI パイプライン起動テンプレート
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: chat-ui-pipeline-run-template
+  namespace: ai-agent-cicd
+spec:
+  params:
+    - name: git-url
+    - name: git-revision
+    - name: git-ref
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1
+      kind: PipelineRun
+      metadata:
+        generateName: chat-ui-build-
+        namespace: ai-agent-cicd
+      spec:
+        pipelineRef:
+          name: chat-ui-build-pipeline
+        params:
+          - name: git-url
+            value: $(tt.params.git-url)
+          - name: git-revision
+            value: $(tt.params.git-revision)
+          - name: image-name
+            value: image-registry.openshift-image-registry.svc:5000/ai-agent-platform/chat-ui
+          - name: deploy-overlay
+            value: "deployment/kustomize/overlays/dev"
+        workspaces:
+          - name: shared-workspace
+            volumeClaimTemplate:
+              spec:
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 1Gi
+          - name: docker-credentials
+            secret:
+              secretName: internal-registry-credentials
 ---
 # Business API パイプライン起動テンプレート
 apiVersion: triggers.tekton.dev/v1beta1
@@ -82,7 +124,7 @@ spec:
           - name: git-revision
             value: $(tt.params.git-revision)
           - name: image-name
-            value: quay.io/droneplatform/business-api
+            value: image-registry.openshift-image-registry.svc:5000/ai-agent-platform/business-api
           - name: deploy-overlay
             value: "deployment/kustomize/overlays/dev"
         workspaces:
@@ -99,4 +141,4 @@ spec:
               claimName: maven-cache-pvc
           - name: docker-credentials
             secret:
-              secretName: quay-credentials
+              secretName: internal-registry-credentials

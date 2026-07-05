@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import os
 import subprocess
-from functools import lru_cache
 from typing import Any
 
 import structlog
@@ -204,7 +203,8 @@ def apply_manifest(yaml_content: str, namespace: str = "") -> dict[str, Any]:
         yaml_content: 適用する YAML 文字列
         namespace: 対象 Namespace (YAML 内の namespace より優先)
     """
-    import tempfile, pathlib
+    import tempfile
+    import pathlib
 
     ns = namespace or _NAMESPACE
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:

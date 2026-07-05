@@ -60,6 +60,32 @@ spec:
         - ref: github-push-binding
       template:
         ref: business-api-pipeline-run-template
+
+    # frontend/chat-ui/ 配下の変更 → Chat UI パイプライン
+    - name: chat-ui-trigger
+      interceptors:
+        - ref:
+            name: github
+          params:
+            - name: secretRef
+              value:
+                secretName: github-webhook-secret
+                secretKey: secret
+            - name: eventTypes
+              value:
+                - push
+        - ref:
+            name: cel
+          params:
+            - name: filter
+              value: >
+                body.ref.startsWith('refs/heads/') &&
+                body.commits.exists(c, c.modified.exists(f, f.startsWith('frontend/chat-ui/')) ||
+                                       c.added.exists(f, f.startsWith('frontend/chat-ui/')))
+      bindings:
+        - ref: github-push-binding
+      template:
+        ref: chat-ui-pipeline-run-template
 ---
 # GitHub Webhook 受信用の Route
 apiVersion: route.openshift.io/v1

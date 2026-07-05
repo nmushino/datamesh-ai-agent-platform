@@ -1,0 +1,24 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: python-lint
+  namespace: ai-agent-cicd
+spec:
+  params:
+    - name: source-dir
+      type: string
+      default: "."
+    - name: python-version
+      type: string
+      default: "3.11"
+  workspaces:
+    - name: source
+  steps:
+    - name: lint
+      image: python:$(params.python-version)-slim
+      workingDir: $(workspaces.source.path)
+      script: |
+        #!/bin/bash
+        set -e
+        pip install ruff -q
+        ruff check $(params.source-dir)

@@ -1,5 +1,4 @@
 """Git Tool 統合テスト。"""
-import os
 import pytest
 from unittest.mock import patch
 
