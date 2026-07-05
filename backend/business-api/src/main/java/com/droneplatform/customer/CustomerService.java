@@ -1,8 +1,6 @@
 package com.droneplatform.customer;
 
-import com.droneplatform.kafka.AgentEventProducer;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.core.Response;
@@ -11,9 +9,6 @@ import java.util.Map;
 
 @ApplicationScoped
 public class CustomerService {
-
-    @Inject
-    AgentEventProducer eventProducer;
 
     @Transactional
     public CustomerEntity register(CustomerRequest req) {
@@ -30,8 +25,6 @@ public class CustomerService {
         entity.phone      = req.phone() != null ? req.phone() : "";
         entity.address    = req.address() != null ? req.address() : "";
         entity.persist();
-
-        eventProducer.sendCustomerEvent("registered", entity);
 
         return entity;
     }
@@ -80,7 +73,6 @@ public class CustomerService {
             entity.status = fields.get("status");
         }
 
-        eventProducer.sendCustomerEvent("updated", entity);
         return entity;
     }
 }
