@@ -114,7 +114,9 @@ spec:
             - backend/business-api/pom.xml
             - package
             - -DskipTests
-            - "-Dquarkus.package.type=uber-jar"
+            # NOTE: Dockerfile.jvm は Quarkus のデフォルト fast-jar レイアウト
+            # (target/quarkus-app/lib 等) を前提にしている。uber-jar にすると
+            # そのディレクトリ構成が生成されずイメージビルドが失敗する。
       workspaces:
         - name: source
           workspace: shared-workspace
