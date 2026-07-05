@@ -5,6 +5,9 @@ export interface ChatMessage {
   createdAt: number;
   tokenUsage?: number;
   errorReason?: string;
+  requiresApproval?: boolean;
+  approvalAction?: string;
+  taskStatus?: "idle" | "running" | "done" | "error";
 }
 
 export interface Thread {

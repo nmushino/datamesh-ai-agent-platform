@@ -55,6 +55,25 @@ export async function sendChatMessage(
   throw new Error("chat request failed: empty stream");
 }
 
+export async function approveTask(
+  threadId: string,
+  accessToken?: string
+): Promise<{ thread_id: string; status: string; reply?: string }> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (accessToken) {
+    headers["Authorization"] = `Bearer ${accessToken}`;
+  }
+  const res = await fetch(`${apiBaseUrl()}/api/v1/approve`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ thread_id: threadId, approved: true }),
+  });
+  if (!res.ok) {
+    throw new Error(`approve request failed: ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function fetchRecentNotifications(): Promise<Notification[]> {
   const res = await fetch(`${apiBaseUrl()}/api/v1/notifications/recent`);
   if (!res.ok) {

@@ -6,7 +6,8 @@ import { ChatBody } from "./components/ChatBody";
 import { Footer } from "./components/Footer";
 import { useThreads } from "./useThreads";
 import { useScheduledTasks } from "./useScheduledTasks";
-import { sendChatMessage } from "./api";
+import { useNotifications } from "./useNotifications";
+import { sendChatMessage, approveTask } from "./api";
 
 const SIDEBAR_DEFAULT_WIDTH = 300;
 
@@ -19,9 +20,12 @@ export default function App() {
     setActiveThreadId,
     createThread,
     appendMessage,
+    updateMessage,
     deleteThread,
   } = useThreads();
   const { tasks: scheduledTasks } = useScheduledTasks();
+  const { notifications, unreadCount, markAllRead, addLocalNotification } =
+    useNotifications();
   const [sending, setSending] = useState(false);
   const [statusText, setStatusText] = useState<string | null>(null);
   const [showQuickActions, setShowQuickActions] = useState(false);
@@ -64,6 +68,9 @@ export default function App() {
         content: res.reply,
         createdAt: Date.now(),
         tokenUsage: res.token_usage,
+        requiresApproval: res.requires_approval,
+        approvalAction: res.approval_action,
+        taskStatus: res.requires_approval ? "idle" : undefined,
       });
     } catch (e) {
       // ネットワーク断・タイムアウト時、ブラウザは "TypeError: Failed to fetch" を投げるが
@@ -83,6 +90,36 @@ export default function App() {
     }
   };
 
+  // タスクボタン: 承認が必要な長時間処理をバックグラウンドで実行し、
+  // 完了したらチャットには結果メッセージを追加、通知ベルにも表示する。
+  // ユーザーはボタンを押した後すぐ他の操作に戻れる(応答を待つ間ブロックしない)。
+  const handleApprove = (threadId: string, messageId: string) => {
+    updateMessage(threadId, messageId, { taskStatus: "running" });
+    approveTask(threadId, auth.user?.access_token)
+      .then((res) => {
+        updateMessage(threadId, messageId, { taskStatus: "done" });
+        appendMessage(threadId, {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: res.reply ?? "処理が完了しました。",
+          createdAt: Date.now(),
+        });
+        addLocalNotification({
+          status: "SUCCESS",
+          message: res.reply ?? "タスクが完了しました。",
+          timestamp: new Date().toLocaleString("ja-JP"),
+        });
+      })
+      .catch((e) => {
+        updateMessage(threadId, messageId, { taskStatus: "error" });
+        addLocalNotification({
+          status: "ERROR",
+          message: `タスクの実行に失敗しました: ${(e as Error).message}`,
+          timestamp: new Date().toLocaleString("ja-JP"),
+        });
+      });
+  };
+
   if (auth.error) {
     return (
       <div className="auth-status">
@@ -97,7 +134,12 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <Header onToggleSidebar={() => setSidebarOpen((v) => !v)} />
+      <Header
+        onToggleSidebar={() => setSidebarOpen((v) => !v)}
+        notifications={notifications}
+        unreadCount={unreadCount}
+        markAllRead={markAllRead}
+      />
       <div className="app-content">
         <Sidebar
           threads={threads}
@@ -122,6 +164,9 @@ export default function App() {
           statusText={statusText}
           showQuickActions={showQuickActions}
           onSend={handleSend}
+          onApprove={(messageId) =>
+            activeThreadId && handleApprove(activeThreadId, messageId)
+          }
         />
       </div>
       <Footer />

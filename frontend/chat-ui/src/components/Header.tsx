@@ -4,14 +4,21 @@ import { Logo } from "./Logo";
 import { OpenMetadataIcon } from "./OpenMetadataIcon";
 import { DatameshHubIcon } from "./DatameshHubIcon";
 import { NotificationPanel } from "./NotificationPanel";
-import { useNotifications } from "../useNotifications";
+import type { Notification } from "../types";
 
 interface Props {
   onToggleSidebar: () => void;
+  notifications: Notification[];
+  unreadCount: number;
+  markAllRead: () => void;
 }
 
-export function Header({ onToggleSidebar }: Props) {
-  const { notifications, unreadCount, markAllRead } = useNotifications();
+export function Header({
+  onToggleSidebar,
+  notifications,
+  unreadCount,
+  markAllRead,
+}: Props) {
   const [open, setOpen] = useState(false);
   const auth = useAppAuth();
   const config = window.__APP_CONFIG__;

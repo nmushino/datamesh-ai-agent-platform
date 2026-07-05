@@ -11,6 +11,7 @@ interface Props {
   statusText?: string | null;
   showQuickActions?: boolean;
   onSend: (message: string) => void;
+  onApprove?: (messageId: string) => void;
 }
 
 const TEXTAREA_MIN_HEIGHT = 44; // .chat-input の min-height と一致させる (送信ボタンとの縦位置ズレ防止)
@@ -26,7 +27,7 @@ const QUICK_ACTIONS = [
   "データ品質",
 ];
 
-export function ChatBody({ thread, sending, statusText, showQuickActions, onSend }: Props) {
+export function ChatBody({ thread, sending, statusText, showQuickActions, onSend, onApprove }: Props) {
   const [input, setInput] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [needsExpand, setNeedsExpand] = useState(false);
@@ -123,7 +124,11 @@ export function ChatBody({ thread, sending, statusText, showQuickActions, onSend
         {thread?.messages.map((m) => (
           <div key={m.id} className={`chat-message chat-message-${m.role}`}>
             {m.role === "assistant" ? (
-              <AssistantBubble message={m} animate={!seenIdsRef.current.has(m.id)} />
+              <AssistantBubble
+                message={m}
+                animate={!seenIdsRef.current.has(m.id)}
+                onApprove={onApprove ? () => onApprove(m.id) : undefined}
+              />
             ) : (
               <UserBubble message={m} onResend={() => setInput(m.content)} />
             )}

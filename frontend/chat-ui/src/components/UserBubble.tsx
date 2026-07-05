@@ -35,7 +35,7 @@ export function UserBubble({ message, onResend }: Props) {
   };
 
   return (
-    <div>
+    <div className="chat-message-user-inner">
       <div className="chat-message-bubble">{shownContent}</div>
       <div className="chat-message-actions">
         {needsCollapse && (
