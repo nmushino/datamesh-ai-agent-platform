@@ -11,7 +11,7 @@ from tools.openmetadata import (
 )
 from tools.business import search_customers, search_bom
 
-_SYSTEM_PROMPT = (Path(__file__).parent.parent.parent / "prompts/search/system.md").read_text()
+SYSTEM_PROMPT = (Path(__file__).parent.parent.parent / "prompts/search/system.md").read_text()
 
 SEARCH_TOOLS = [
     search_data_assets,
@@ -29,5 +29,5 @@ def create_search_agent(enable_thinking: bool = False, max_tokens: int = 1024):
     return create_react_agent(
         model=get_llm(enable_thinking=enable_thinking, max_tokens=max_tokens),
         tools=SEARCH_TOOLS,
-        state_modifier=_SYSTEM_PROMPT,
+        state_modifier=SYSTEM_PROMPT,
     )

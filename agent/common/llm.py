@@ -1,5 +1,4 @@
 import os
-from functools import lru_cache
 from langchain_core.messages import BaseMessage
 from langchain_openai import ChatOpenAI
 
@@ -14,13 +13,18 @@ MAX_TOKENS_LEVELS = {
 DEFAULT_MAX_TOKENS_LEVEL = "low"
 
 
-@lru_cache(maxsize=16)
 def get_llm(
     model: str | None = None,
     temperature: float = 0,
     enable_thinking: bool = False,
     max_tokens: int = 1024,
 ) -> ChatOpenAI:
+    # NOTE: 以前は @lru_cache で ChatOpenAI インスタンス(と内部のhttpxコネクション
+    # プール)を使い回していたが、LangGraph のグラフ実行(checkpointerの有無を問わず
+    # StateGraph.stream() 経由でノード関数を呼ぶ場合)内で同一クライアントを共有すると、
+    # vLLM側は正常に応答を生成しているのに最終メッセージが空になる現象が発生した
+    # (直接関数呼び出しでは再現せず)。LangGraphのノード実行に伴うスレッド境界を
+    # 跨いだコネクション共有が疑われるため、毎回新規のクライアントを生成する。
     return ChatOpenAI(
         base_url=os.environ["VLLM_BASE_URL"],
         api_key=os.getenv("VLLM_API_KEY", "not-needed"),

@@ -1,34 +1,33 @@
 import contextvars
+import json
 import re
 import structlog
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langgraph.graph import StateGraph, END
 
 from agent.common.state import AgentState
 from agent.common.llm import get_llm, sum_tokens
 from agent.orchestrator.router import classify_intent_detailed, route_to_agent
-from agent.schema_agent.agent import create_schema_agent
-from agent.search_agent.agent import create_search_agent
-from agent.registration_agent.agent import create_registration_agent
+from agent.schema_agent.agent import SCHEMA_TOOLS, SYSTEM_PROMPT as SCHEMA_SYSTEM_PROMPT
+from agent.search_agent.agent import SEARCH_TOOLS, SYSTEM_PROMPT as SEARCH_SYSTEM_PROMPT
+from agent.registration_agent.agent import REGISTRATION_TOOLS, SYSTEM_PROMPT as REGISTRATION_SYSTEM_PROMPT
 
 log = structlog.get_logger()
 
-_AGENT_FACTORIES = {
-    "schema":       create_schema_agent,
-    "search":       create_search_agent,
-    "registration": create_registration_agent,
+# NOTE: 以前は langgraph.prebuilt.create_react_agent (内部でさらに1段コンパイル済み
+# StateGraphを持つ) をサブエージェントとして使い、外側の create_graph() のノードの
+# 中から .stream()/.invoke() していた。しかし外側グラフの実行(Pregel)経由でこの
+# 入れ子のグラフを呼び出すと、vLLM側は正常に応答を生成しているにもかかわらず
+# 最終メッセージが空になる現象が再現性高く発生した(素のPython関数として直接
+# 呼び出した場合は問題なし。エージェントキャッシュ・LLMクライアントキャッシュ・
+# config分離のいずれも原因ではなく、ネストしたグラフ実行そのものが原因と判明)。
+# そのため、サブエージェントは create_react_agent を使わず、ツールバインディング
+# された LLM を手動でループさせる形に変更し、ネストしたグラフ実行を避ける。
+_SUBAGENT_CONFIGS = {
+    "schema":       (SCHEMA_TOOLS, SCHEMA_SYSTEM_PROMPT),
+    "search":       (SEARCH_TOOLS, SEARCH_SYSTEM_PROMPT),
+    "registration": (REGISTRATION_TOOLS, REGISTRATION_SYSTEM_PROMPT),
 }
-
-
-def _get_agent(name: str, enable_thinking: bool = False, max_tokens: int = 1024):
-    # NOTE: 以前は (name, enable_thinking, max_tokens) キーでコンパイル済み
-    # エージェントをキャッシュしていたが、同一のコンパイル済みLangGraphオブジェクトを
-    # 複数リクエストから同時に .stream() すると、実際のvLLM応答は正常に生成されて
-    # いるにもかかわらず最終メッセージが空になる事象が確認された(単発呼び出しでは
-    # 再現せず、本番の同時アクセス下でのみ発生)。create_react_agent() 自体は
-    # グラフ構造を組み立てるだけの軽量な処理のため、リクエストごとに毎回新規生成し、
-    # 並行実行時の状態共有によるリスクを避ける。
-    return _AGENT_FACTORIES[name](enable_thinking=enable_thinking, max_tokens=max_tokens)
 
 
 # NOTE: AgentState["messages"] は Annotated[list, operator.add] で
@@ -74,28 +73,45 @@ _TOOL_STATUS_LABELS = {
 }
 
 
-def _invoke_subagent(agent, input_messages: list) -> dict:
-    """create_react_agent のツール呼び出しループを stream() で実行し、
-    実際に呼ばれたツール名を status キューへ逐次通知する。
-    NOTE: stream(stream_mode="updates") は各ノードの新規メッセージだけを
-    返すため、invoke() 相当の全メッセージ列は手動で積み上げる
-    (再度 invoke() し直すとツール呼び出しの副作用が二重実行されてしまう)。"""
+_MAX_TOOL_ITERATIONS = 5
+
+
+def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, input_messages: list) -> list:
+    """ツールバインディングされたLLMで手動のReActループを回す
+    (create_react_agentのネストしたグラフ実行は使わない。理由は _SUBAGENT_CONFIGS
+    のコメントを参照)。実際に呼ばれたツール名を status キューへ逐次通知する。"""
+    tools, system_prompt = _SUBAGENT_CONFIGS[agent_name]
+    tool_map = {t.name: t for t in tools}
     status_q = _status_queue_var.get()
-    accumulated = list(input_messages)
-    for chunk in agent.stream({"messages": input_messages}, stream_mode="updates"):
-        for node_name, node_output in chunk.items():
-            if not isinstance(node_output, dict):
-                continue
-            new_messages = node_output.get("messages", [])
-            accumulated.extend(new_messages)
-            if status_q and node_name == "tools":
-                for msg in new_messages:
-                    tool_name = getattr(msg, "name", None)
-                    if tool_name:
-                        status_q.put(
-                            _TOOL_STATUS_LABELS.get(tool_name, f"{tool_name} を実行しています...")
-                        )
-    return {"messages": accumulated}
+    llm_with_tools = get_llm(enable_thinking=enable_thinking, max_tokens=max_tokens).bind_tools(tools)
+
+    messages = [SystemMessage(content=system_prompt)] + list(input_messages)
+    new_messages: list = []
+    for _ in range(_MAX_TOOL_ITERATIONS):
+        ai_message = llm_with_tools.invoke(messages)
+        messages.append(ai_message)
+        new_messages.append(ai_message)
+        tool_calls = getattr(ai_message, "tool_calls", None) or []
+        if not tool_calls:
+            break
+        for tc in tool_calls:
+            tool_fn = tool_map.get(tc["name"])
+            if tool_fn:
+                if status_q:
+                    status_q.put(
+                        _TOOL_STATUS_LABELS.get(tc["name"], f"{tc['name']} を実行しています...")
+                    )
+                result = tool_fn.invoke(tc["args"])
+            else:
+                result = {"error": f"unknown tool: {tc['name']}", "success": False}
+            tool_message = ToolMessage(
+                content=json.dumps(result, ensure_ascii=False),
+                tool_call_id=tc["id"],
+                name=tc["name"],
+            )
+            messages.append(tool_message)
+            new_messages.append(tool_message)
+    return new_messages
 
 
 def intent_classifier_node(state: AgentState) -> dict:
@@ -160,27 +176,23 @@ def _invoke_subagent_ensured(
 ) -> list:
     """サブエージェントを実行し、必ず1件以上の新規メッセージを返す。
 
-    同時アクセスで vLLM が混雑すると2回目の応答生成(ツール結果を受けての
-    最終応答)が空文字を返してくることがあり(例外は発生しない)、その場合は
+    高負荷時に応答生成が空文字を返してくることがあり(例外は発生しない)、その場合は
     同じ入力で再試行する。全て空ならフォールバックのAIMessageを返し、
     呼び出し側の result["messages"][-1] が IndexError にならないようにする。
     また、選択されたmax_tokensが会話履歴と合わせてモデルのコンテキスト長を
     超える場合は、エラーメッセージから安全なmax_tokensを算出して1回だけ
     縮小再試行する。"""
-    from langchain_core.messages import AIMessage
-
-    agent = _get_agent(agent_name, enable_thinking=enable_thinking, max_tokens=max_tokens)
+    current_max_tokens = max_tokens
     for attempt in range(3):
         try:
-            result = _invoke_subagent(agent, input_messages)
+            new_messages = _invoke_subagent(agent_name, enable_thinking, current_max_tokens, input_messages)
         except Exception as e:
-            safe_max = _shrink_max_tokens_for_error(str(e), max_tokens)
+            safe_max = _shrink_max_tokens_for_error(str(e), current_max_tokens)
             if safe_max is None:
                 raise
             log.warning("context_length_retry", node=agent_name, safe_max_tokens=safe_max)
-            agent = _get_agent(agent_name, enable_thinking=enable_thinking, max_tokens=safe_max)
+            current_max_tokens = safe_max
             continue
-        new_messages = result["messages"][len(input_messages):]
         if new_messages:
             return new_messages
         log.warning("subagent_empty_reply_retry", attempt=attempt)

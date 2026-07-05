@@ -12,7 +12,7 @@ from tools.business import (
 )
 from tools.openmetadata import search_data_assets
 
-_SYSTEM_PROMPT = (Path(__file__).parent.parent.parent / "prompts/validation/system.md").read_text()
+SYSTEM_PROMPT = (Path(__file__).parent.parent.parent / "prompts/validation/system.md").read_text()
 
 REGISTRATION_TOOLS = [
     register_customer,
@@ -33,5 +33,5 @@ def create_registration_agent(enable_thinking: bool = False, max_tokens: int = 1
     return create_react_agent(
         model=get_llm(enable_thinking=enable_thinking, max_tokens=max_tokens),
         tools=REGISTRATION_TOOLS,
-        state_modifier=_SYSTEM_PROMPT,
+        state_modifier=SYSTEM_PROMPT,
     )
