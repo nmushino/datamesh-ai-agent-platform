@@ -64,11 +64,9 @@ export default function App() {
       appendMessage(threadId, {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: isNetworkError
-          ? "回答できませんでした"
-          : `エラーが発生しました: ${(e as Error).message}`,
+        content: isNetworkError ? "回答できませんでした" : "エラーが発生しました。",
         createdAt: Date.now(),
-        errorReason: isNetworkError ? (e as Error).message : undefined,
+        errorReason: (e as Error).message,
       });
     } finally {
       setSending(false);
