@@ -1,9 +1,11 @@
 # vLLM ServingRuntime (OpenShift AI / RHOAI)
+# NOTE: namespace はここでは指定しない。`oc apply -n <namespace>` 側で指定すること。
+# redhat-ods-applications は RHOAI が自動生成する保護対象の namespace のため、
+# ユーザーが InferenceService 等を直接作成することはできない。
 apiVersion: serving.kserve.io/v1alpha1
 kind: ServingRuntime
 metadata:
   name: vllm-runtime
-  namespace: redhat-ods-applications
   labels:
     app: vllm-runtime
 spec:
@@ -13,9 +15,12 @@ spec:
       autoSelect: true
   containers:
     - name: kserve-container
-      image: quay.io/rh-aiservices-bu/vllm-openai-ubi9:0.4.2
+      # NOTE: quay.io/rh-aiservices-bu/vllm-openai-ubi9 は 2023-12 で更新が止まっており
+      # 新しいモデルアーキテクチャ (Qwen3 等) を認識できず起動時にクラッシュする。
+      # 公式の vllm/vllm-openai イメージ (継続メンテナンス) を使用する。
+      image: docker.io/vllm/vllm-openai:v0.9.2
       command:
-        - python
+        - python3
         - -m
         - vllm.entrypoints.openai.api_server
       args:
@@ -23,10 +28,26 @@ spec:
         - "--dtype=float16"
         - "--max-model-len=8192"
         - "--tensor-parallel-size=1"
-        - "--served-model-name=$(MODEL_NAME)"
+        # NOTE: $(MODEL_NAME) は未定義の env 変数参照だったため、KServe が
+        # コンテナに自動注入する INFERENCE_SERVICE_NAME に置き換える。
+        - "--served-model-name=$(INFERENCE_SERVICE_NAME)"
+        # NOTE: vLLM のデフォルト待受ポートは 8000 だが、containerPort/probe は
+        # 8080 を前提としているため、明示的に --port=8080 を指定して一致させる。
+        - "--port=8080"
+        # NOTE: LangGraph エージェントが function/tool calling (tool_choice="auto")
+        # を使うため、vLLM 側でツール呼び出しパーサーを明示的に有効化する必要がある。
+        # Qwen 系モデルは hermes 形式のツール呼び出しをサポートする。
+        - "--enable-auto-tool-choice"
+        - "--tool-call-parser=hermes"
       env:
         - name: HF_HOME
           value: /tmp/hf_home
+        # OpenShift は任意 UID でコンテナを実行するため HOME (/) が書き込み不可。
+        # Triton (vLLM が内部で JIT カーネルに使用) はデフォルトで $HOME/.triton に
+        # キャッシュを書き込もうとして Permission denied になるため、書き込み可能な
+        # /tmp に変更する。
+        - name: HOME
+          value: /tmp
       ports:
         - containerPort: 8080
           protocol: TCP
@@ -53,14 +74,15 @@ spec:
         initialDelaySeconds: 180
         periodSeconds: 15
 ---
-# Granite 20B Code Instruct モデルの InferenceService
+# モデルの InferenceService
+# NOTE: name / storageUri 内のモデル名は plaeholder "MODEL_DISPLAY_NAME_PLACEHOLDER"。
+# 適用前に呼び出し側 (aiagent.sh) で実際のモデル名に置換すること。
 apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService
 metadata:
-  name: granite-20b-code-instruct
-  namespace: redhat-ods-applications
+  name: MODEL_DISPLAY_NAME_PLACEHOLDER
   labels:
-    app: granite-20b-code-instruct
+    app: MODEL_DISPLAY_NAME_PLACEHOLDER
   annotations:
     serving.knative.openshift.io/enablePassthrough: "true"
     sidecar.istio.io/inject: "true"
@@ -73,7 +95,7 @@ spec:
       modelFormat:
         name: vLLM
       runtime: vllm-runtime
-      storageUri: "pvc://model-storage/granite-20b-code-instruct"
+      storageUri: "pvc://model-storage/MODEL_DISPLAY_NAME_PLACEHOLDER"
       resources:
         requests:
           nvidia.com/gpu: "1"
@@ -81,15 +103,16 @@ spec:
           nvidia.com/gpu: "1"
 ---
 # モデルストレージ用 PVC
+# NOTE: storageClassName はクラスターのデフォルト StorageClass に任せる
+# (ocs-storagecluster-ceph-rbd は OpenShift Data Foundation 環境専用のため、
+#  AWS/EBS 等の環境ではデフォルト StorageClass を明示的に上書きすること)
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: model-storage
-  namespace: redhat-ods-applications
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: ocs-storagecluster-ceph-rbd
   resources:
     requests:
       storage: 100Gi

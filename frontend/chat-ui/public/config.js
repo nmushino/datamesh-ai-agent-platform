@@ -7,4 +7,5 @@ window.__APP_CONFIG__ = {
   keycloakClientId: "chat-ui",
   openMetadataUrl: "http://localhost:8585",
   developerHubUrl: "http://localhost:7007",
+  modelName: "qwen3-8b",
 };

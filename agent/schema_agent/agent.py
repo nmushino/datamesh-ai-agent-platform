@@ -9,7 +9,7 @@ from tools.openmetadata import (
     create_quality_rule,
 )
 
-_SYSTEM_PROMPT = (Path(__file__).parent.parent.parent / "prompts/schema/system.md").read_text()
+SYSTEM_PROMPT = (Path(__file__).parent.parent.parent / "prompts/schema/system.md").read_text()
 
 SCHEMA_TOOLS = [
     get_database_schema,
@@ -20,9 +20,9 @@ SCHEMA_TOOLS = [
 ]
 
 
-def create_schema_agent():
+def create_schema_agent(enable_thinking: bool = False, max_tokens: int = 1024):
     return create_react_agent(
-        model=get_llm(),
+        model=get_llm(enable_thinking=enable_thinking, max_tokens=max_tokens),
         tools=SCHEMA_TOOLS,
-        state_modifier=_SYSTEM_PROMPT,
+        state_modifier=SYSTEM_PROMPT,
     )

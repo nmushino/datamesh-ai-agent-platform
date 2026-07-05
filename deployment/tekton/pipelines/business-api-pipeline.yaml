@@ -2,7 +2,7 @@ apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
   name: business-api-build-pipeline
-  namespace: ai-agent-platform
+  namespace: ai-agent-cicd
   annotations:
     tekton.dev/cicd: "true"
     tekton.dev/displayName: "Business API (Quarkus) ビルド・テスト・デプロイ パイプライン"
@@ -15,7 +15,8 @@ spec:
       default: main
     - name: image-name
       type: string
-      default: quay.io/droneplatform/business-api
+      # 内部レジストリ (overlays/dev の image remap と一致させる)
+      default: image-registry.openshift-image-registry.svc:5000/ai-agent-platform/business-api
     - name: deploy-overlay
       type: string
       default: deployment/kustomize/overlays/dev
@@ -23,10 +24,15 @@ spec:
       type: string
       default: "false"
       description: "true にすると GraalVM Native ビルドを行う（時間がかかる）"
+    - name: enable-gitops-commit
+      type: string
+      default: "false"
+      description: "true の場合のみ GitOps リポジトリへコミット・プッシュする (git-credentials Secret が必要)"
   workspaces:
     - name: shared-workspace
-    - name: maven-cache
-      description: Maven ローカルリポジトリキャッシュ
+    # NOTE: maven-cache (静的PVC) は shared-workspace (volumeClaimTemplate) と
+    # 同一 TaskRun 内で併用すると Tekton の affinity assistant が
+    # "more than one PersistentVolumeClaim is bound" で TaskRun を拒否するため削除。
     - name: docker-credentials
   results:
     - name: image-digest
@@ -34,14 +40,22 @@ spec:
   tasks:
     - name: git-clone
       taskRef:
-        name: git-clone
-        kind: ClusterTask
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: git-clone
+          - name: namespace
+            value: openshift-pipelines
+      # NOTE: このクラスターの openshift-pipelines/git-clone Task は
+      # tekton catalog 版と異なり大文字のパラメータ名を使う。
       params:
-        - name: url
+        - name: URL
           value: $(params.git-url)
-        - name: revision
+        - name: REVISION
           value: $(params.git-revision)
-        - name: deleteExisting
+        - name: DELETE_EXISTING
           value: "true"
       workspaces:
         - name: output
@@ -52,8 +66,14 @@ spec:
       runAfter:
         - git-clone
       taskRef:
-        name: maven
-        kind: ClusterTask
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: maven
+          - name: namespace
+            value: openshift-pipelines
       params:
         - name: GOALS
           value:
@@ -66,16 +86,27 @@ spec:
       workspaces:
         - name: source
           workspace: shared-workspace
-        - name: maven-settings
-          workspace: maven-cache
 
     # Quarkus ビルド (JVM モード)
-    - name: maven-package
+    # NOTE: Tekton の変数展開は三項演算子等の式をサポートしないため
+    # ("$(params.x == 'a' ? 'b' : 'c')" は無効)、native-build の値で
+    # when 条件分岐する2つの Task に分割している。
+    - name: maven-package-jvm
       runAfter:
         - maven-test
+      when:
+        - input: $(params.native-build)
+          operator: notin
+          values: ["true"]
       taskRef:
-        name: maven
-        kind: ClusterTask
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: maven
+          - name: namespace
+            value: openshift-pipelines
       params:
         - name: GOALS
           value:
@@ -83,23 +114,59 @@ spec:
             - backend/business-api/pom.xml
             - package
             - -DskipTests
-            - "-Dquarkus.package.type=$(params.native-build == 'true' ? 'native' : 'uber-jar')"
+            # NOTE: Dockerfile.jvm は Quarkus のデフォルト fast-jar レイアウト
+            # (target/quarkus-app/lib 等) を前提にしている。uber-jar にすると
+            # そのディレクトリ構成が生成されずイメージビルドが失敗する。
       workspaces:
         - name: source
           workspace: shared-workspace
-        - name: maven-settings
-          workspace: maven-cache
+
+    # Quarkus ビルド (GraalVM Native モード)
+    - name: maven-package-native
+      runAfter:
+        - maven-test
+      when:
+        - input: $(params.native-build)
+          operator: in
+          values: ["true"]
+      taskRef:
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: maven
+          - name: namespace
+            value: openshift-pipelines
+      params:
+        - name: GOALS
+          value:
+            - -f
+            - backend/business-api/pom.xml
+            - package
+            - -DskipTests
+            - "-Dquarkus.package.type=native"
+      workspaces:
+        - name: source
+          workspace: shared-workspace
 
     # コンテナイメージビルド
     - name: build-image
       runAfter:
-        - maven-package
+        - maven-package-jvm
+        - maven-package-native
       taskRef:
-        name: buildah
-        kind: ClusterTask
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: buildah
+          - name: namespace
+            value: openshift-pipelines
       params:
         - name: IMAGE
-          value: $(params.image-name):$(tasks.git-clone.results.commit)
+          value: $(params.image-name):$(tasks.git-clone.results.COMMIT)
         - name: DOCKERFILE
           value: backend/business-api/src/main/docker/Dockerfile.jvm
         - name: CONTEXT
@@ -110,10 +177,14 @@ spec:
         - name: dockerconfig
           workspace: docker-credentials
 
-    # GitOps 更新
+    # GitOps 更新 (任意)
     - name: update-gitops
       runAfter:
         - build-image
+      when:
+        - input: $(params.enable-gitops-commit)
+          operator: in
+          values: ["true"]
       taskRef:
         name: update-kustomize-image
         kind: Task
@@ -121,7 +192,7 @@ spec:
         - name: image-name
           value: $(params.image-name)
         - name: new-tag
-          value: $(tasks.git-clone.results.commit)
+          value: $(tasks.git-clone.results.COMMIT)
         - name: overlay-path
           value: $(params.deploy-overlay)
       workspaces:

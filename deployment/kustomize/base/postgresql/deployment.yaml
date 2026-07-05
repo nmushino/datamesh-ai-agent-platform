@@ -27,6 +27,12 @@ spec:
       labels:
         app: postgresql
     spec:
+      # NOTE: このクラスターの postgresql Pod は anyuid SCC で実行されるため
+      # restricted-v2 と異なり fsGroup が自動付与されない。rhel9/postgresql-15
+      # イメージは postgres ユーザー (UID/GID 26) で動作するため、PVC の
+      # ボリュームがその GID で書き込み可能になるよう明示的に指定する。
+      securityContext:
+        fsGroup: 26
       containers:
         - name: postgresql
           # :latest は Flyway が未知の新しいマイナーバージョンとして拒否するため固定バージョンを使う

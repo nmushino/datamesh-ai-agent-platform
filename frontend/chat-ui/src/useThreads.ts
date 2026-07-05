@@ -61,6 +61,23 @@ export function useThreads() {
     []
   );
 
+  const updateMessage = useCallback(
+    (threadId: string, messageId: string, patch: Partial<ChatMessage>) => {
+      setThreads((prev) =>
+        prev.map((t) => {
+          if (t.id !== threadId) return t;
+          return {
+            ...t,
+            messages: t.messages.map((m) =>
+              m.id === messageId ? { ...m, ...patch } : m
+            ),
+          };
+        })
+      );
+    },
+    []
+  );
+
   const deleteThread = useCallback(
     (threadId: string) => {
       setThreads((prev) => prev.filter((t) => t.id !== threadId));
@@ -78,6 +95,7 @@ export function useThreads() {
     setActiveThreadId,
     createThread,
     appendMessage,
+    updateMessage,
     deleteThread,
   };
 }

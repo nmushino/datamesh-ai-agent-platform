@@ -29,5 +29,12 @@ export function useNotifications() {
 
   const markAllRead = () => setUnreadCount(0);
 
-  return { notifications, unreadCount, markAllRead };
+  // タスクボタン(承認要の長時間処理)完了時など、バックエンドの
+  // Kafka経由通知を待たずにフロントエンドから直接ベルへ差し込むための入口
+  const addLocalNotification = (n: Notification) => {
+    setNotifications((prev) => [n, ...prev].slice(0, 50));
+    setUnreadCount((c) => c + 1);
+  };
+
+  return { notifications, unreadCount, markAllRead, addLocalNotification };
 }

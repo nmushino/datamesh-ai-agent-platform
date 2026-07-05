@@ -1,4 +1,4 @@
-import type { ChatResponse, Notification, ScheduledTask } from "./types";
+import type { ChatResponse, ChatSettings, Notification, ScheduledTask } from "./types";
 
 function apiBaseUrl(): string {
   return window.__APP_CONFIG__?.apiBaseUrl ?? "";
@@ -7,7 +7,9 @@ function apiBaseUrl(): string {
 export async function sendChatMessage(
   message: string,
   threadId: string,
-  accessToken?: string
+  accessToken?: string,
+  onStatus?: (status: string) => void,
+  settings?: ChatSettings
 ): Promise<ChatResponse> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (accessToken) {
@@ -16,7 +18,12 @@ export async function sendChatMessage(
   const res = await fetch(`${apiBaseUrl()}/api/v1/chat`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ message, thread_id: threadId }),
+    body: JSON.stringify({
+      message,
+      thread_id: threadId,
+      enable_thinking: settings?.enableThinking ?? false,
+      max_tokens_level: settings?.maxTokensLevel ?? "low",
+    }),
   });
   if (!res.ok || !res.body) {
     throw new Error(`chat request failed: ${res.status}`);
@@ -24,7 +31,9 @@ export async function sendChatMessage(
 
   // 推論に時間がかかっても手前のロードバランサのアイドルタイムアウトで
   // 切断されないよう、サーバーはSSE(text/event-stream)でkeep-aliveを
-  // 送りながら最終結果を "data: {...}" として返す
+  // 送りながら最終結果を "data: {...}" として返す。3秒以上かかる場合は
+  // 途中経過として {"status": "..."} だけを含むイベントが挟まることがある
+  // (最終結果には "reply" が含まれる)
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -42,10 +51,33 @@ export async function sendChatMessage(
       if (payload.error) {
         throw new Error(payload.error);
       }
+      if (payload.status && !payload.reply) {
+        onStatus?.(payload.status);
+        continue;
+      }
       return payload as ChatResponse;
     }
   }
   throw new Error("chat request failed: empty stream");
+}
+
+export async function approveTask(
+  threadId: string,
+  accessToken?: string
+): Promise<{ thread_id: string; status: string; reply?: string }> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (accessToken) {
+    headers["Authorization"] = `Bearer ${accessToken}`;
+  }
+  const res = await fetch(`${apiBaseUrl()}/api/v1/approve`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ thread_id: threadId, approved: true }),
+  });
+  if (!res.ok) {
+    throw new Error(`approve request failed: ${res.status}`);
+  }
+  return res.json();
 }
 
 export async function fetchRecentNotifications(): Promise<Notification[]> {

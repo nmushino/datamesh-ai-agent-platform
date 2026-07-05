@@ -12,6 +12,7 @@ window.__APP_CONFIG__ = {
   keycloakRealm: "${KEYCLOAK_REALM:-drone-platform}",
   keycloakClientId: "${KEYCLOAK_CLIENT_ID:-chat-ui}",
   openMetadataUrl: "${OPENMETADATA_URL:-}",
-  developerHubUrl: "${DEVELOPER_HUB_URL:-}"
+  developerHubUrl: "${DEVELOPER_HUB_URL:-}",
+  modelName: "${MODEL_NAME:-}"
 };
 EOF

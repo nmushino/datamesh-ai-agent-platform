@@ -1,73 +1,270 @@
+import contextvars
+import json
+import re
 import structlog
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langgraph.graph import StateGraph, END
 
 from agent.common.state import AgentState
-from agent.common.llm import sum_tokens
-from agent.orchestrator.router import classify_intent, route_to_agent
-from agent.schema_agent.agent import create_schema_agent
-from agent.search_agent.agent import create_search_agent
-from agent.registration_agent.agent import create_registration_agent
+from agent.common.llm import get_llm, sum_tokens
+from agent.orchestrator.router import classify_intent_detailed, route_to_agent
+from agent.schema_agent.agent import SCHEMA_TOOLS, SYSTEM_PROMPT as SCHEMA_SYSTEM_PROMPT
+from agent.search_agent.agent import SEARCH_TOOLS, SYSTEM_PROMPT as SEARCH_SYSTEM_PROMPT
+from agent.registration_agent.agent import REGISTRATION_TOOLS, SYSTEM_PROMPT as REGISTRATION_SYSTEM_PROMPT
 
 log = structlog.get_logger()
 
-# エージェントファクトリ（初回呼び出し時に生成）
-_AGENTS: dict = {}
+# NOTE: 以前は langgraph.prebuilt.create_react_agent (内部でさらに1段コンパイル済み
+# StateGraphを持つ) をサブエージェントとして使い、外側の create_graph() のノードの
+# 中から .stream()/.invoke() していた。しかし外側グラフの実行(Pregel)経由でこの
+# 入れ子のグラフを呼び出すと、vLLM側は正常に応答を生成しているにもかかわらず
+# 最終メッセージが空になる現象が再現性高く発生した(素のPython関数として直接
+# 呼び出した場合は問題なし。エージェントキャッシュ・LLMクライアントキャッシュ・
+# config分離のいずれも原因ではなく、ネストしたグラフ実行そのものが原因と判明)。
+# そのため、サブエージェントは create_react_agent を使わず、ツールバインディング
+# された LLM を手動でループさせる形に変更し、ネストしたグラフ実行を避ける。
+_SUBAGENT_CONFIGS = {
+    "schema":       (SCHEMA_TOOLS, SCHEMA_SYSTEM_PROMPT),
+    "search":       (SEARCH_TOOLS, SEARCH_SYSTEM_PROMPT),
+    "registration": (REGISTRATION_TOOLS, REGISTRATION_SYSTEM_PROMPT),
+}
 
 
-def _get_agent(name: str):
-    if name not in _AGENTS:
-        factories = {
-            "schema":       create_schema_agent,
-            "search":       create_search_agent,
-            "registration": create_registration_agent,
-        }
-        _AGENTS[name] = factories[name]()
-    return _AGENTS[name]
+# NOTE: AgentState["messages"] は Annotated[list, operator.add] で
+# チェックポインタ経由で会話全体を蓄積し続けるため、長い会話では
+# vLLM の max-model-len (8192) を超えて 400 エラーになる。LLM へ渡す
+# 直前には必ず直近 N 件だけに絞ること。
+# ツール実行結果(ToolMessage)は1件で数千文字になることがあり、10件では
+# 大きな結果が複数含まれるだけで出力用の余地がほぼ無くなり空応答の原因に
+# なっていたため、より保守的な件数に絞る。
+RECENT_MESSAGES_LIMIT = 6
+
+
+def _recent_messages(state: AgentState) -> list:
+    messages = state["messages"]
+    return messages[-RECENT_MESSAGES_LIMIT:] if len(messages) > RECENT_MESSAGES_LIMIT else messages
+
+
+# NOTE: config["configurable"] 経由で status キューを渡そうとしたが、
+# PostgresSaver チェックポインタ付きでコンパイルしたグラフでは
+# configurable がチェックポインタの識別キー以外を除去してしまい、
+# ノード関数まで届かないことが判明した (contextvars ならスレッド内の
+# 呼び出しスタックに伝播するため、チェックポインタの介在を受けない)。
+_status_queue_var: contextvars.ContextVar = contextvars.ContextVar(
+    "status_queue", default=None
+)
+
+# ツール名 -> 検索中表示用の日本語ラベル (「意図を判定しています」だけでは
+# 何をしているか分からないという要望を受け、サブエージェント内のツール
+# 呼び出し単位でも status キューへ通知する)
+_TOOL_STATUS_LABELS = {
+    "search_data_assets":     "OpenMetadata でデータ資産を検索しています...",
+    "get_recent_activity":    "OpenMetadata の最近の更新をクロールしています...",
+    "get_my_data_assets":     "OpenMetadata でオーナー別データを検索しています...",
+    "get_database_schema":    "テーブルのスキーマ情報を取得しています...",
+    "list_tables":            "テーブル一覧を取得しています...",
+    "register_table_metadata": "テーブルメタデータを登録しています...",
+    "update_column_description": "カラムの説明を更新しています...",
+    "get_data_lineage":       "データリネージを辿っています...",
+    "get_quality_metrics":    "データ品質メトリクスを取得しています...",
+    "create_quality_rule":    "データ品質ルールを作成しています...",
+    "search_customers":       "顧客情報を検索しています...",
+    "search_bom":             "BOM情報を検索しています...",
+}
+
+
+_MAX_TOOL_ITERATIONS = 5
+
+
+def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, input_messages: list) -> list:
+    """ツールバインディングされたLLMで手動のReActループを回す
+    (create_react_agentのネストしたグラフ実行は使わない。理由は _SUBAGENT_CONFIGS
+    のコメントを参照)。実際に呼ばれたツール名を status キューへ逐次通知する。"""
+    tools, system_prompt = _SUBAGENT_CONFIGS[agent_name]
+    tool_map = {t.name: t for t in tools}
+    status_q = _status_queue_var.get()
+    llm_with_tools = get_llm(enable_thinking=enable_thinking, max_tokens=max_tokens).bind_tools(tools)
+
+    messages = [SystemMessage(content=system_prompt)] + list(input_messages)
+    new_messages: list = []
+    for _ in range(_MAX_TOOL_ITERATIONS):
+        ai_message = llm_with_tools.invoke(messages)
+        messages.append(ai_message)
+        new_messages.append(ai_message)
+        tool_calls = getattr(ai_message, "tool_calls", None) or []
+        if not tool_calls:
+            break
+        for tc in tool_calls:
+            tool_fn = tool_map.get(tc["name"])
+            if tool_fn:
+                if status_q:
+                    status_q.put(
+                        _TOOL_STATUS_LABELS.get(tc["name"], f"{tc['name']} を実行しています...")
+                    )
+                result = tool_fn.invoke(tc["args"])
+            else:
+                result = {"error": f"unknown tool: {tc['name']}", "success": False}
+            tool_message = ToolMessage(
+                content=json.dumps(result, ensure_ascii=False),
+                tool_call_id=tc["id"],
+                name=tc["name"],
+            )
+            messages.append(tool_message)
+            new_messages.append(tool_message)
+    return new_messages
 
 
 def intent_classifier_node(state: AgentState) -> dict:
     last_message = state["messages"][-1]
     text = last_message.content if hasattr(last_message, "content") else str(last_message)
-    intent = classify_intent(text)
-    log.info("intent_classified", intent=intent, thread_id=state.get("thread_id"))
-    return {"intent": intent}
+    intent, matched_pattern = classify_intent_detailed(text)
+    log.info(
+        "intent_classified", intent=intent, matched_pattern=matched_pattern,
+        thread_id=state.get("thread_id"),
+    )
+    return {"intent": intent, "matched_pattern": matched_pattern or ""}
+
+
+_CONTEXT_LENGTH_RE = re.compile(
+    r"maximum context length is (\d+) tokens.*?requested (\d+) tokens \((\d+) in the messages"
+)
+
+
+def _shrink_max_tokens_for_error(error_message: str, requested_max_tokens: int) -> int | None:
+    """vLLMの'maximum context length'エラーメッセージから実際のプロンプト
+    トークン数を読み取り、上限に収まる安全なmax_tokensを計算する。
+    エラー形式が一致しない場合はNoneを返す。"""
+    m = _CONTEXT_LENGTH_RE.search(error_message)
+    if not m:
+        return None
+    model_limit, _requested_total, prompt_tokens = (int(g) for g in m.groups())
+    safety_margin = 50
+    safe_max = model_limit - prompt_tokens - safety_margin
+    if safe_max < 256:
+        return None
+    return min(safe_max, requested_max_tokens)
+
+
+def chitchat_node(state: AgentState) -> dict:
+    # NOTE: tools を一切バインドしない生の LLM 呼び出しのため、tool_choice="auto" を
+    # 指定していても物理的にツール呼び出しが発生しえない (ReAct ループを完全に回避)。
+    # 挨拶・雑談は毎回確実に高速応答させるためのショートカット経路。
+    log.info("chitchat_invoked", thread_id=state.get("thread_id"))
+    enable_thinking = state.get("enable_thinking", False)
+    max_tokens = state.get("max_tokens", 1024)
+    messages = _recent_messages(state)
+    try:
+        llm = get_llm(enable_thinking=enable_thinking, max_tokens=max_tokens)
+        ai_message = llm.invoke(messages)
+    except Exception as e:
+        safe_max = _shrink_max_tokens_for_error(str(e), max_tokens)
+        if safe_max is None:
+            raise
+        log.warning("context_length_retry", node="chitchat", safe_max_tokens=safe_max)
+        llm = get_llm(enable_thinking=enable_thinking, max_tokens=safe_max)
+        ai_message = llm.invoke(messages)
+    return {
+        "messages": [ai_message],
+        "active_agent": "chitchat",
+        "agent_output": {"messages": [ai_message.content]},
+        "token_usage": sum_tokens([ai_message]),
+    }
+
+
+def _invoke_subagent_ensured(
+    agent_name: str, enable_thinking: bool, max_tokens: int, input_messages: list
+) -> list:
+    """サブエージェントを実行し、必ず1件以上の新規メッセージを返す。
+
+    高負荷時に応答生成が空文字を返してくることがあり(例外は発生しない)、その場合は
+    同じ入力で再試行する。全て空ならフォールバックのAIMessageを返し、
+    呼び出し側の result["messages"][-1] が IndexError にならないようにする。
+    また、選択されたmax_tokensが会話履歴と合わせてモデルのコンテキスト長を
+    超える場合は、エラーメッセージから安全なmax_tokensを算出して1回だけ
+    縮小再試行する。"""
+    current_max_tokens = max_tokens
+    for attempt in range(3):
+        try:
+            new_messages = _invoke_subagent(agent_name, enable_thinking, current_max_tokens, input_messages)
+        except Exception as e:
+            safe_max = _shrink_max_tokens_for_error(str(e), current_max_tokens)
+            if safe_max is None:
+                raise
+            log.warning("context_length_retry", node=agent_name, safe_max_tokens=safe_max)
+            current_max_tokens = safe_max
+            continue
+        if new_messages:
+            return new_messages
+        log.warning("subagent_empty_reply_retry", attempt=attempt)
+    return [AIMessage(content="すみません、処理中にエラーが発生しました。もう一度お試しください。")]
 
 
 def schema_agent_node(state: AgentState) -> dict:
     log.info("schema_agent_invoked", thread_id=state.get("thread_id"))
-    agent = _get_agent("schema")
-    result = agent.invoke({"messages": state["messages"]})
-    new_messages = result["messages"][len(state["messages"]):]
+    input_messages = _recent_messages(state)
+    new_messages = _invoke_subagent_ensured(
+        "schema",
+        state.get("enable_thinking", False),
+        state.get("max_tokens", 1024),
+        input_messages,
+    )
     return {
         "messages": new_messages,
         "active_agent": "schema",
-        "agent_output": {"messages": [m.content for m in result["messages"][-1:]]},
+        "agent_output": {"messages": [new_messages[-1].content]},
         "token_usage": sum_tokens(new_messages),
     }
 
 
+def _build_user_context_message(state: AgentState) -> SystemMessage | None:
+    user_id = state.get("user_id")
+    if not user_id or user_id == "anonymous":
+        return None
+    # NOTE: Keycloak の "admin" ロールを持つユーザーは、OpenMetadata 側の
+    # 実ユーザー名 "admin" のデータオーナーとして扱う (このワークショップ環境の
+    # OpenMetadata データは全て "admin" ユーザーが所有者として登録されているため)。
+    is_admin = "admin" in (state.get("user_roles") or [])
+    owner_name = "admin" if is_admin else user_id
+    return SystemMessage(
+        content=(
+            f"[context] ログイン中のユーザー名: {user_id}"
+            f"{' (OpenMetadata 管理者権限あり)' if is_admin else ''}\n"
+            f"「マイデータ」「自分のデータ」を尋ねられた場合は "
+            f"get_my_data_assets を owner_name=\"{owner_name}\" で呼び出すこと。"
+        )
+    )
+
+
 def search_agent_node(state: AgentState) -> dict:
     log.info("search_agent_invoked", thread_id=state.get("thread_id"))
-    agent = _get_agent("search")
-    result = agent.invoke({"messages": state["messages"]})
-    new_messages = result["messages"][len(state["messages"]):]
+    context_msg = _build_user_context_message(state)
+    input_messages = ([context_msg] if context_msg else []) + _recent_messages(state)
+    new_messages = _invoke_subagent_ensured(
+        "search",
+        state.get("enable_thinking", False),
+        state.get("max_tokens", 1024),
+        input_messages,
+    )
     return {
         "messages": new_messages,
         "active_agent": "search",
-        "agent_output": {"messages": [m.content for m in result["messages"][-1:]]},
+        "agent_output": {"messages": [new_messages[-1].content]},
         "token_usage": sum_tokens(new_messages),
     }
 
 
 def registration_agent_node(state: AgentState) -> dict:
     log.info("registration_agent_invoked", thread_id=state.get("thread_id"))
-    agent = _get_agent("registration")
-    result = agent.invoke({"messages": state["messages"]})
-    output_messages = result["messages"][len(state["messages"]):]
+    input_messages = _recent_messages(state)
+    output_messages = _invoke_subagent_ensured(
+        "registration",
+        state.get("enable_thinking", False),
+        state.get("max_tokens", 1024),
+        input_messages,
+    )
 
     # 承認フラグの検出（レスポンスに「承認」キーワードが含まれるか）
-    last_content = result["messages"][-1].content if result["messages"] else ""
+    last_content = output_messages[-1].content
     requires_approval = "承認" in last_content or "confirm" in last_content.lower()
 
     return {
@@ -98,6 +295,7 @@ def create_graph(checkpointer=None) -> object:
     graph = StateGraph(AgentState)
 
     graph.add_node("intent_classifier", intent_classifier_node)
+    graph.add_node("chitchat", chitchat_node)
     graph.add_node("schema_agent", schema_agent_node)
     graph.add_node("search_agent", search_agent_node)
     graph.add_node("registration_agent", registration_agent_node)
@@ -109,12 +307,14 @@ def create_graph(checkpointer=None) -> object:
         "intent_classifier",
         route_to_agent,
         {
+            "chitchat":     "chitchat",
             "schema":       "schema_agent",
             "search":       "search_agent",
             "registration": "registration_agent",
         },
     )
 
+    graph.add_edge("chitchat", END)
     graph.add_edge("schema_agent", END)
     graph.add_edge("search_agent", END)
 

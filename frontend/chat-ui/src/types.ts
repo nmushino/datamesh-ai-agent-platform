@@ -5,6 +5,9 @@ export interface ChatMessage {
   createdAt: number;
   tokenUsage?: number;
   errorReason?: string;
+  requiresApproval?: boolean;
+  approvalAction?: string;
+  taskStatus?: "idle" | "running" | "done" | "error";
 }
 
 export interface Thread {
@@ -13,6 +16,13 @@ export interface Thread {
   messages: ChatMessage[];
   createdAt: number;
   updatedAt: number;
+}
+
+export type MaxTokensLevel = "low" | "medium" | "high" | "max";
+
+export interface ChatSettings {
+  enableThinking: boolean;
+  maxTokensLevel: MaxTokensLevel;
 }
 
 export interface ChatResponse {
@@ -51,6 +61,7 @@ declare global {
       keycloakClientId: string;
       openMetadataUrl: string;
       developerHubUrl: string;
+      modelName?: string;
     };
   }
 }

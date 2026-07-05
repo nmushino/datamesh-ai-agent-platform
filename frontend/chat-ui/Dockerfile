@@ -1,5 +1,5 @@
 # ===== Build stage =====
-FROM node:20-slim AS builder
+FROM docker.io/library/node:20-slim AS builder
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install
@@ -8,7 +8,7 @@ RUN npm run build
 
 # ===== Runtime stage =====
 # 非rootで8080を待受するイメージを使い OpenShift の任意UID実行に対応する
-FROM nginxinc/nginx-unprivileged:1.27-alpine
+FROM docker.io/nginxinc/nginx-unprivileged:1.27-alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
 # config.js だけは /usr/share/nginx/html (root所有・読み取り専用) の外、
 # /tmp (常に書き込み可能) に置いて起動時に差し替えられるようにする

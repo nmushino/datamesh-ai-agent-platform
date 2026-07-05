@@ -38,9 +38,15 @@ spec:
               app: business-api
       ports:
         - port: 8080
-    # OpenShift AI (RHOAI) + KServe InferenceService (vLLM CPU, Qwen3-8B)
+    # OpenShift AI (RHOAI) + KServe InferenceService (vLLM, Qwen3-8B)
+    # NOTE: podSelector 単独では同一 namespace 内の Pod にしかマッチしないため、
+    # 別 namespace (ai-model-serving) で動く vLLM Pod への egress には
+    # namespaceSelector の併記が必須。
     - to:
-        - podSelector:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ai-model-serving
+          podSelector:
             matchLabels:
               serving.kserve.io/inferenceservice: qwen3-8b
       ports:

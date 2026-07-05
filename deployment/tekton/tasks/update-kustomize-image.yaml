@@ -2,12 +2,12 @@ apiVersion: tekton.dev/v1
 kind: Task
 metadata:
   name: update-kustomize-image
-  namespace: ai-agent-platform
+  namespace: ai-agent-cicd
 spec:
   params:
     - name: image-name
       type: string
-      description: 更新するイメージ名 (例: quay.io/droneplatform/ai-agent-orchestrator)
+      description: "更新するイメージ名 (例: quay.io/droneplatform/ai-agent-orchestrator)"
     - name: new-tag
       type: string
       description: 新しいイメージタグ (コミットハッシュ等)

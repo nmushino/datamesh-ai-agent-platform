@@ -4,6 +4,12 @@ kind: Kustomization
 # OpenMetadata は openmetadata namespace、Kafka は quarkusdroneshop-demo namespace、
 # Keycloak は keycloak namespace の既存インスタンスを共用するため、
 # このplatform専用のリソースは持たない (Kafkaは deployment/kustomize/kafka-shared/ を参照)
+#
+# NOTE: ollama/deployment.yaml と qwen3-serving/deployment.yaml は GPU/RHOAI が
+# 使えない sandbox 環境向けの CPU 推論フォールバックのため、意図的に含めていない。
+# GPU (RHOAI vLLM) が使える環境では aiagent.sh vllm で ai-model-serving namespace に
+# デプロイした InferenceService を使うこと。フォールバックが必要な場合は
+# ollama/deployment.yaml または qwen3-serving/deployment.yaml を resources に追加する。
 resources:
   - ai-agent/deployment.yaml
   - ai-agent/service.yaml
@@ -12,8 +18,6 @@ resources:
   - business-api/service.yaml
   - business-api/route.yaml
   - postgresql/deployment.yaml
-  - ollama/deployment.yaml
-  - qwen3-serving/deployment.yaml
   - chat-ui/deployment.yaml
   - namespace.yaml
   - rbac.yaml

@@ -1,11 +1,13 @@
 import asyncio
 import json
 import os
+import queue
 import time
 import uuid
 import structlog
 from contextlib import asynccontextmanager, ExitStack
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
+import base64
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -15,9 +17,10 @@ from langgraph.checkpoint.postgres import PostgresSaver
 from dotenv import load_dotenv
 load_dotenv()
 
-from agent.orchestrator.graph import create_graph
-from agent.orchestrator.notifications import get_bridge as get_notification_bridge
-from agent.orchestrator.scheduled_tasks import get_bridge as get_scheduled_task_bridge
+from agent.common.llm import MAX_TOKENS_LEVELS, DEFAULT_MAX_TOKENS_LEVEL  # noqa: E402
+from agent.orchestrator.graph import create_graph, _status_queue_var  # noqa: E402
+from agent.orchestrator.notifications import get_bridge as get_notification_bridge  # noqa: E402
+from agent.orchestrator.scheduled_tasks import get_bridge as get_scheduled_task_bridge  # noqa: E402
 
 log = structlog.get_logger()
 
@@ -83,6 +86,28 @@ class ChatRequest(BaseModel):
     thread_id: str = ""
     user_id: str = "anonymous"
     user_roles: list[str] = ["viewer"]
+    # チャット画面の設定ボタンから毎回選べるLLM設定
+    enable_thinking: bool = False
+    max_tokens_level: str = DEFAULT_MAX_TOKENS_LEVEL
+
+
+def _identity_from_bearer_token(request: Request) -> tuple[str | None, list[str]]:
+    """Authorization ヘッダの Keycloak JWT からユーザー名とロールを取り出す。
+    NOTE: 署名検証は行わない (認可判断には使わず、表示・データ絞り込みの
+    UX 用途のみ)。認可が必要な操作は Business API 側の OIDC 検証に従う。"""
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        return None, []
+    token = auth.split(" ", 1)[1]
+    try:
+        payload_b64 = token.split(".")[1]
+        payload_b64 += "=" * (-len(payload_b64) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload_b64))
+        username = claims.get("preferred_username")
+        roles = claims.get("realm_access", {}).get("roles", [])
+        return username, roles
+    except Exception:
+        return None, []
 
 
 class ChatResponse(BaseModel):
@@ -113,21 +138,84 @@ def ready():
     return {"status": "ready"}
 
 
-def _invoke_graph(req: ChatRequest, thread_id: str, config: dict) -> dict:
-    return _graph.invoke(
+# ノード名 -> 検索中表示用の日本語ラベル
+_NODE_STATUS_LABELS = {
+    "chitchat":           "応答を生成しています...",
+    "schema_agent":       "スキーマ情報を検索しています...",
+    "search_agent":       "データ資産を検索しています...",
+    "registration_agent": "登録処理を実行しています...",
+    "human_approval":     "承認を待っています...",
+}
+
+# intent_classifier の判定結果 -> 表示用の日本語ラベル。
+# classify_intent はキーワード正規表現による瞬時の判定のため、
+# 「意図を判定しています...」という固定文言のままだと何も進んでいないように
+# 見えてしまう。判定が完了した時点で実際に何と判定されたかを示す。
+_INTENT_LABELS = {
+    "chitchat":        "雑談",
+    "schema_sync":     "スキーマ同期",
+    "metadata_search": "メタデータ検索",
+    "metadata_update": "メタデータ更新",
+    "data_register":   "データ登録",
+    "data_search":     "データ検索",
+    "data_update":      "データ更新",
+    "lineage_check":   "データリネージ確認",
+    "platform_ops":    "プラットフォーム操作",
+    "unknown":         "判定不能(検索エージェントへフォールバック)",
+}
+
+
+def _invoke_graph(req: ChatRequest, thread_id: str, config: dict, status_q: queue.Queue) -> dict:
+    final_state: dict = {}
+    # NOTE: invoke() ではなく stream(stream_mode="updates") を使い、ノードが
+    # 完了するたびに status_q へ通知する (3秒以上かかる場合に何を検索中か
+    # フロントエンドへ表示するため)。実行は一度きりで、副作用が重複することはない。
+    # status_queue は config["configurable"] 経由で渡そうとしたが、
+    # PostgresSaver チェックポインタがそれ以外のキーを除去してしまうため、
+    # contextvars 経由でサブエージェントのノード関数に渡す (この関数は
+    # run_in_executor の同一ワーカースレッド内で最後まで実行されるため、
+    # スレッドをまたがず伝播できる)。
+    _status_queue_var.set(status_q)
+    max_tokens = MAX_TOKENS_LEVELS.get(req.max_tokens_level, MAX_TOKENS_LEVELS[DEFAULT_MAX_TOKENS_LEVEL])
+    for chunk in _graph.stream(
         {
             "messages": [HumanMessage(content=req.message)],
             "thread_id": thread_id,
             "user_id": req.user_id,
             "user_roles": req.user_roles,
+            "enable_thinking": req.enable_thinking,
+            "max_tokens": max_tokens,
         },
         config=config,
-    )
+        stream_mode="updates",
+    ):
+        for node_name, node_output in chunk.items():
+            if node_name == "intent_classifier" and isinstance(node_output, dict):
+                intent = node_output.get("intent", "unknown")
+                label = _INTENT_LABELS.get(intent, intent)
+                matched_pattern = node_output.get("matched_pattern") or ""
+                if matched_pattern:
+                    # 正規表現をそのまま出すと読みにくいので簡易的に整形する
+                    readable = matched_pattern.replace(".*", "…").strip("^$")
+                    status_q.put(f"「{label}」と判定しました(「{readable}」に一致)。処理を開始します...")
+                else:
+                    status_q.put(f"「{label}」と判定しました。処理を開始します...")
+            else:
+                status_q.put(_NODE_STATUS_LABELS.get(node_name, f"{node_name} を実行しています..."))
+            if isinstance(node_output, dict):
+                final_state.update(node_output)
+    return final_state
 
 
 @app.post("/api/v1/chat")
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, request: Request):
     thread_id = req.thread_id or str(uuid.uuid4())
+    # NOTE: chat-ui は現状 user_id/user_roles を body に含めないため、
+    # Authorization ヘッダの Keycloak トークンから解決する。
+    username, roles = _identity_from_bearer_token(request)
+    if username:
+        req.user_id = username
+        req.user_roles = roles
     config = {
         "configurable": {
             "thread_id": thread_id,
@@ -139,13 +227,36 @@ async def chat(req: ChatRequest):
 
     async def event_generator():
         loop = asyncio.get_event_loop()
-        future = loop.run_in_executor(None, _invoke_graph, req, thread_id, config)
+        status_q: queue.Queue = queue.Queue()
+        future = loop.run_in_executor(None, _invoke_graph, req, thread_id, config, status_q)
         # CPU推論は数十秒かかることがあるため、手前のロードバランサの
         # アイドルタイムアウト(接続に一定時間データが流れないと切断される)に
-        # 引っかからないよう、完了まで定期的にコメント行を流し続ける
+        # 引っかからないよう、完了まで定期的にコメント行を流し続ける。
+        # NOTE: sleep(15) を直接ループ条件のポーリング間隔にすると、実際の
+        # 処理が数秒で終わっても次のポーリングまで最大15秒待たされてしまう
+        # (chitchat 等の高速応答でも常に15秒かかる不具合の原因だった)。
+        # ポーリング自体は短い間隔で行い、キープアライブ行の送出だけを
+        # 15秒間隔に間引く。
+        KEEPALIVE_INTERVAL = 15
+        POLL_INTERVAL = 0.5
+        STATUS_DISPLAY_THRESHOLD = 3.0
+        elapsed_since_keepalive = 0.0
+        elapsed_total = 0.0
         while not future.done():
-            yield ": keep-alive\n\n"
-            await asyncio.sleep(15)
+            await asyncio.sleep(POLL_INTERVAL)
+            elapsed_since_keepalive += POLL_INTERVAL
+            elapsed_total += POLL_INTERVAL
+            if elapsed_since_keepalive >= KEEPALIVE_INTERVAL:
+                yield ": keep-alive\n\n"
+                elapsed_since_keepalive = 0.0
+
+            # 3秒以上かかっている場合のみ、現在何を実行中か通知する
+            if elapsed_total >= STATUS_DISPLAY_THRESHOLD:
+                latest_status = None
+                while not status_q.empty():
+                    latest_status = status_q.get_nowait()
+                if latest_status:
+                    yield f"data: {json.dumps({'status': latest_status, 'thread_id': thread_id})}\n\n"
 
         try:
             result = future.result()
@@ -154,7 +265,12 @@ async def chat(req: ChatRequest):
             yield f"data: {json.dumps({'error': f'エージェント実行エラー: {e}', 'thread_id': thread_id})}\n\n"
             return
 
-        last_message = result["messages"][-1]
+        messages = result.get("messages") or []
+        if not messages:
+            log.error("chat_empty_result", thread_id=thread_id)
+            yield f"data: {json.dumps({'error': 'エージェント実行エラー: 応答を生成できませんでした', 'thread_id': thread_id})}\n\n"
+            return
+        last_message = messages[-1]
         reply = last_message.content if hasattr(last_message, "content") else str(last_message)
         payload = ChatResponse(
             thread_id=thread_id,
@@ -164,7 +280,7 @@ async def chat(req: ChatRequest):
             requires_approval=result.get("requires_approval", False),
             approval_action=result.get("approval_action", ""),
             token_usage=result.get("token_usage", 0),
-        ).model_dump()
+        ).dict()
         yield f"data: {json.dumps(payload)}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

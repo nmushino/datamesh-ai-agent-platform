@@ -3,8 +3,8 @@ Business Tool 統合テスト（Quarkus API のモックを使用）
 """
 import pytest
 import httpx
-from unittest.mock import MagicMock, patch
-from tools.business.customer_tools import register_customer, search_customers, get_customer
+from unittest.mock import MagicMock
+from tools.business.customer_tools import register_customer, search_customers
 
 
 @pytest.fixture

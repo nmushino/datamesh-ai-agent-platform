@@ -78,7 +78,7 @@ def search_customers(
             params["status"] = status
         result = client.get("/api/v1/customers/search", params)
         return {**result, "success": True}
-    except httpx.RequestError as e:
+    except httpx.RequestError:
         return {"error": "Business API に接続できません", "success": False}
     except Exception as e:
         log.error("search_customers_failed", error=str(e))

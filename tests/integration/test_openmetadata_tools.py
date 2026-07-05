@@ -3,10 +3,9 @@ OpenMetadata Tool 統合テスト
 実行前に OPENMETADATA_HOST と OPENMETADATA_JWT_TOKEN を設定してください。
 """
 import pytest
-from unittest.mock import MagicMock, patch
-from tools.openmetadata.schema_tools import get_database_schema, list_tables, register_table_metadata
+from unittest.mock import MagicMock
+from tools.openmetadata.schema_tools import get_database_schema, register_table_metadata
 from tools.openmetadata.search_tools import search_data_assets
-from tools.openmetadata.lineage_tools import get_data_lineage
 
 
 @pytest.fixture
