@@ -8,8 +8,13 @@ import { useThreads } from "./useThreads";
 import { useScheduledTasks } from "./useScheduledTasks";
 import { useNotifications } from "./useNotifications";
 import { sendChatMessage, approveTask } from "./api";
+import type { ChatSettings } from "./types";
 
 const SIDEBAR_DEFAULT_WIDTH = 300;
+const DEFAULT_CHAT_SETTINGS: ChatSettings = {
+  enableThinking: false,
+  maxTokensLevel: "low",
+};
 
 export default function App() {
   const auth = useAppAuth();
@@ -31,6 +36,7 @@ export default function App() {
   const [showQuickActions, setShowQuickActions] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
+  const [chatSettings, setChatSettings] = useState<ChatSettings>(DEFAULT_CHAT_SETTINGS);
 
   // 未ログインなら自動でKeycloakのログイン画面へリダイレクトする
   useEffect(() => {
@@ -60,7 +66,8 @@ export default function App() {
         message,
         threadId,
         auth.user?.access_token,
-        setStatusText
+        setStatusText,
+        chatSettings
       );
       appendMessage(threadId, {
         id: crypto.randomUUID(),
@@ -83,6 +90,13 @@ export default function App() {
         content: isNetworkError ? "回答できませんでした" : "エラーが発生しました。",
         createdAt: Date.now(),
         errorReason: (e as Error).message,
+      });
+      addLocalNotification({
+        status: "ERROR",
+        message: isNetworkError
+          ? "通信エラーによりチャットの応答を取得できませんでした。"
+          : `チャットでエラーが発生しました: ${(e as Error).message}`,
+        timestamp: new Date().toLocaleString("ja-JP"),
       });
     } finally {
       setSending(false);
@@ -167,6 +181,8 @@ export default function App() {
           onApprove={(messageId) =>
             activeThreadId && handleApprove(activeThreadId, messageId)
           }
+          chatSettings={chatSettings}
+          onChatSettingsChange={setChatSettings}
         />
       </div>
       <Footer />

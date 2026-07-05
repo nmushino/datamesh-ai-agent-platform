@@ -12,26 +12,31 @@ from agent.registration_agent.agent import create_registration_agent
 
 log = structlog.get_logger()
 
-# エージェントファクトリ（初回呼び出し時に生成）
+# エージェントファクトリ（(名前, thinking, max_tokens) の組み合わせごとに生成・キャッシュ）
 _AGENTS: dict = {}
 
+_AGENT_FACTORIES = {
+    "schema":       create_schema_agent,
+    "search":       create_search_agent,
+    "registration": create_registration_agent,
+}
 
-def _get_agent(name: str):
-    if name not in _AGENTS:
-        factories = {
-            "schema":       create_schema_agent,
-            "search":       create_search_agent,
-            "registration": create_registration_agent,
-        }
-        _AGENTS[name] = factories[name]()
-    return _AGENTS[name]
+
+def _get_agent(name: str, enable_thinking: bool = False, max_tokens: int = 1024):
+    key = (name, enable_thinking, max_tokens)
+    if key not in _AGENTS:
+        _AGENTS[key] = _AGENT_FACTORIES[name](enable_thinking=enable_thinking, max_tokens=max_tokens)
+    return _AGENTS[key]
 
 
 # NOTE: AgentState["messages"] は Annotated[list, operator.add] で
 # チェックポインタ経由で会話全体を蓄積し続けるため、長い会話では
 # vLLM の max-model-len (8192) を超えて 400 エラーになる。LLM へ渡す
 # 直前には必ず直近 N 件だけに絞ること。
-RECENT_MESSAGES_LIMIT = 10
+# ツール実行結果(ToolMessage)は1件で数千文字になることがあり、10件では
+# 大きな結果が複数含まれるだけで出力用の余地がほぼ無くなり空応答の原因に
+# なっていたため、より保守的な件数に絞る。
+RECENT_MESSAGES_LIMIT = 6
 
 
 def _recent_messages(state: AgentState) -> list:
@@ -104,7 +109,10 @@ def chitchat_node(state: AgentState) -> dict:
     # 指定していても物理的にツール呼び出しが発生しえない (ReAct ループを完全に回避)。
     # 挨拶・雑談は毎回確実に高速応答させるためのショートカット経路。
     log.info("chitchat_invoked", thread_id=state.get("thread_id"))
-    llm = get_llm()
+    llm = get_llm(
+        enable_thinking=state.get("enable_thinking", False),
+        max_tokens=state.get("max_tokens", 1024),
+    )
     ai_message = llm.invoke(_recent_messages(state))
     return {
         "messages": [ai_message],
@@ -134,7 +142,11 @@ def _invoke_subagent_ensured(agent, input_messages: list) -> list:
 
 def schema_agent_node(state: AgentState) -> dict:
     log.info("schema_agent_invoked", thread_id=state.get("thread_id"))
-    agent = _get_agent("schema")
+    agent = _get_agent(
+        "schema",
+        enable_thinking=state.get("enable_thinking", False),
+        max_tokens=state.get("max_tokens", 1024),
+    )
     input_messages = _recent_messages(state)
     new_messages = _invoke_subagent_ensured(agent, input_messages)
     return {
@@ -166,7 +178,11 @@ def _build_user_context_message(state: AgentState) -> SystemMessage | None:
 
 def search_agent_node(state: AgentState) -> dict:
     log.info("search_agent_invoked", thread_id=state.get("thread_id"))
-    agent = _get_agent("search")
+    agent = _get_agent(
+        "search",
+        enable_thinking=state.get("enable_thinking", False),
+        max_tokens=state.get("max_tokens", 1024),
+    )
     context_msg = _build_user_context_message(state)
     input_messages = ([context_msg] if context_msg else []) + _recent_messages(state)
     new_messages = _invoke_subagent_ensured(agent, input_messages)
@@ -180,7 +196,11 @@ def search_agent_node(state: AgentState) -> dict:
 
 def registration_agent_node(state: AgentState) -> dict:
     log.info("registration_agent_invoked", thread_id=state.get("thread_id"))
-    agent = _get_agent("registration")
+    agent = _get_agent(
+        "registration",
+        enable_thinking=state.get("enable_thinking", False),
+        max_tokens=state.get("max_tokens", 1024),
+    )
     input_messages = _recent_messages(state)
     output_messages = _invoke_subagent_ensured(agent, input_messages)
 

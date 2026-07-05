@@ -18,6 +18,13 @@ export interface Thread {
   updatedAt: number;
 }
 
+export type MaxTokensLevel = "low" | "medium" | "high" | "max";
+
+export interface ChatSettings {
+  enableThinking: boolean;
+  maxTokensLevel: MaxTokensLevel;
+}
+
 export interface ChatResponse {
   thread_id: string;
   reply: string;

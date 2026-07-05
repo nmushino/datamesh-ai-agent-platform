@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import type { Thread } from "../types";
+import type { ChatSettings, Thread } from "../types";
 import { NetworkBackground } from "./NetworkBackground";
 import { PendingIndicator } from "./PendingIndicator";
 import { AssistantBubble } from "./AssistantBubble";
 import { UserBubble } from "./UserBubble";
+import { ChatSettingsBar } from "./ChatSettingsBar";
 
 interface Props {
   thread: Thread | null;
@@ -12,6 +13,8 @@ interface Props {
   showQuickActions?: boolean;
   onSend: (message: string) => void;
   onApprove?: (messageId: string) => void;
+  chatSettings: ChatSettings;
+  onChatSettingsChange: (settings: ChatSettings) => void;
 }
 
 const TEXTAREA_MIN_HEIGHT = 44; // .chat-input の min-height と一致させる (送信ボタンとの縦位置ズレ防止)
@@ -27,7 +30,16 @@ const QUICK_ACTIONS = [
   "データ品質",
 ];
 
-export function ChatBody({ thread, sending, statusText, showQuickActions, onSend, onApprove }: Props) {
+export function ChatBody({
+  thread,
+  sending,
+  statusText,
+  showQuickActions,
+  onSend,
+  onApprove,
+  chatSettings,
+  onChatSettingsChange,
+}: Props) {
   const [input, setInput] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [needsExpand, setNeedsExpand] = useState(false);
@@ -151,6 +163,7 @@ export function ChatBody({ thread, sending, statusText, showQuickActions, onSend
         {window.__APP_CONFIG__?.modelName && (
           <div className="chat-model-label">利用モデル: {window.__APP_CONFIG__.modelName}</div>
         )}
+        <ChatSettingsBar settings={chatSettings} onChange={onChatSettingsChange} />
         <div className="chat-input-row">
           <div className="chat-input-wrapper">
             <textarea

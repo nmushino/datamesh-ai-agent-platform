@@ -15,3 +15,6 @@ class AgentState(TypedDict):
     user_roles: list[str]
     # Annotatedなし(累積せず毎ターン上書き) = このターンで使用したトークン数のみを保持する
     token_usage: int
+    # チャット画面から毎回選べるLLM設定 (Thinkingモードのオン/オフ、max_tokensの段階)
+    enable_thinking: bool
+    max_tokens: int

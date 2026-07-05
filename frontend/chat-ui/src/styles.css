@@ -787,6 +787,52 @@ body,
   padding: 8px 16px 0;
 }
 
+.chat-settings-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px 0;
+}
+
+.chat-settings-toggle {
+  padding: 3px 10px;
+  font-size: 11px;
+  color: #666;
+  background: #f2f3f5;
+  border: 1px solid #d7d9de;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.chat-settings-toggle-on {
+  color: white;
+  background: #4457e6;
+  border-color: #4457e6;
+}
+
+.chat-settings-max-tokens {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: #f2f3f5;
+  border-radius: 12px;
+}
+
+.chat-settings-level {
+  padding: 3px 10px;
+  font-size: 11px;
+  color: #666;
+  background: none;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.chat-settings-level-active {
+  color: white;
+  background: #4457e6;
+}
+
 .chat-input-row {
   display: flex;
   align-items: flex-end;

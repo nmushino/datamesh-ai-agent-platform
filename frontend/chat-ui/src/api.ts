@@ -1,4 +1,4 @@
-import type { ChatResponse, Notification, ScheduledTask } from "./types";
+import type { ChatResponse, ChatSettings, Notification, ScheduledTask } from "./types";
 
 function apiBaseUrl(): string {
   return window.__APP_CONFIG__?.apiBaseUrl ?? "";
@@ -8,7 +8,8 @@ export async function sendChatMessage(
   message: string,
   threadId: string,
   accessToken?: string,
-  onStatus?: (status: string) => void
+  onStatus?: (status: string) => void,
+  settings?: ChatSettings
 ): Promise<ChatResponse> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (accessToken) {
@@ -17,7 +18,12 @@ export async function sendChatMessage(
   const res = await fetch(`${apiBaseUrl()}/api/v1/chat`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ message, thread_id: threadId }),
+    body: JSON.stringify({
+      message,
+      thread_id: threadId,
+      enable_thinking: settings?.enableThinking ?? false,
+      max_tokens_level: settings?.maxTokensLevel ?? "low",
+    }),
   });
   if (!res.ok || !res.body) {
     throw new Error(`chat request failed: ${res.status}`);

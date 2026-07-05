@@ -17,6 +17,7 @@ from langgraph.checkpoint.postgres import PostgresSaver
 from dotenv import load_dotenv
 load_dotenv()
 
+from agent.common.llm import MAX_TOKENS_LEVELS, DEFAULT_MAX_TOKENS_LEVEL  # noqa: E402
 from agent.orchestrator.graph import create_graph, _status_queue_var  # noqa: E402
 from agent.orchestrator.notifications import get_bridge as get_notification_bridge  # noqa: E402
 from agent.orchestrator.scheduled_tasks import get_bridge as get_scheduled_task_bridge  # noqa: E402
@@ -85,6 +86,9 @@ class ChatRequest(BaseModel):
     thread_id: str = ""
     user_id: str = "anonymous"
     user_roles: list[str] = ["viewer"]
+    # チャット画面の設定ボタンから毎回選べるLLM設定
+    enable_thinking: bool = False
+    max_tokens_level: str = DEFAULT_MAX_TOKENS_LEVEL
 
 
 def _identity_from_bearer_token(request: Request) -> tuple[str | None, list[str]]:
@@ -172,12 +176,15 @@ def _invoke_graph(req: ChatRequest, thread_id: str, config: dict, status_q: queu
     # run_in_executor の同一ワーカースレッド内で最後まで実行されるため、
     # スレッドをまたがず伝播できる)。
     _status_queue_var.set(status_q)
+    max_tokens = MAX_TOKENS_LEVELS.get(req.max_tokens_level, MAX_TOKENS_LEVELS[DEFAULT_MAX_TOKENS_LEVEL])
     for chunk in _graph.stream(
         {
             "messages": [HumanMessage(content=req.message)],
             "thread_id": thread_id,
             "user_id": req.user_id,
             "user_roles": req.user_roles,
+            "enable_thinking": req.enable_thinking,
+            "max_tokens": max_tokens,
         },
         config=config,
         stream_mode="updates",
