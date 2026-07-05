@@ -114,28 +114,33 @@ def chitchat_node(state: AgentState) -> dict:
     }
 
 
-def _ensure_reply(result: dict, input_messages: list) -> list:
-    """サブエージェントが新規メッセージを1件も生成できなかった場合
-    (ツール呼び出し後にエラーで打ち切られた等) に空リストを返さないための
-    フォールバック。呼び出し側の result["messages"][-1] が IndexError に
-    ならないよう、必ず最低1件のAIメッセージを保証する。"""
-    new_messages = result["messages"][len(input_messages):]
-    if not new_messages:
-        from langchain_core.messages import AIMessage
-        new_messages = [AIMessage(content="すみません、処理中にエラーが発生しました。もう一度お試しください。")]
-    return new_messages
+def _invoke_subagent_ensured(agent, input_messages: list) -> list:
+    """サブエージェントを実行し、必ず1件以上の新規メッセージを返す。
+
+    高負荷時に vLLM の2回目の応答生成(ツール結果を受けての最終応答)が
+    空文字を返してくることがあり、その場合は同じ入力で1回だけ再試行する。
+    再試行しても空ならフォールバックのAIMessageを返し、呼び出し側の
+    result["messages"][-1] が IndexError にならないようにする。"""
+    from langchain_core.messages import AIMessage
+
+    for attempt in range(2):
+        result = _invoke_subagent(agent, input_messages)
+        new_messages = result["messages"][len(input_messages):]
+        if new_messages:
+            return new_messages
+        log.warning("subagent_empty_reply_retry", attempt=attempt)
+    return [AIMessage(content="すみません、処理中にエラーが発生しました。もう一度お試しください。")]
 
 
 def schema_agent_node(state: AgentState) -> dict:
     log.info("schema_agent_invoked", thread_id=state.get("thread_id"))
     agent = _get_agent("schema")
     input_messages = _recent_messages(state)
-    result = _invoke_subagent(agent, input_messages)
-    new_messages = _ensure_reply(result, input_messages)
+    new_messages = _invoke_subagent_ensured(agent, input_messages)
     return {
         "messages": new_messages,
         "active_agent": "schema",
-        "agent_output": {"messages": [m.content for m in result["messages"][-1:]]},
+        "agent_output": {"messages": [new_messages[-1].content]},
         "token_usage": sum_tokens(new_messages),
     }
 
@@ -164,12 +169,11 @@ def search_agent_node(state: AgentState) -> dict:
     agent = _get_agent("search")
     context_msg = _build_user_context_message(state)
     input_messages = ([context_msg] if context_msg else []) + _recent_messages(state)
-    result = _invoke_subagent(agent, input_messages)
-    new_messages = _ensure_reply(result, input_messages)
+    new_messages = _invoke_subagent_ensured(agent, input_messages)
     return {
         "messages": new_messages,
         "active_agent": "search",
-        "agent_output": {"messages": [m.content for m in result["messages"][-1:]]},
+        "agent_output": {"messages": [new_messages[-1].content]},
         "token_usage": sum_tokens(new_messages),
     }
 
@@ -178,8 +182,7 @@ def registration_agent_node(state: AgentState) -> dict:
     log.info("registration_agent_invoked", thread_id=state.get("thread_id"))
     agent = _get_agent("registration")
     input_messages = _recent_messages(state)
-    result = _invoke_subagent(agent, input_messages)
-    output_messages = _ensure_reply(result, input_messages)
+    output_messages = _invoke_subagent_ensured(agent, input_messages)
 
     # 承認フラグの検出（レスポンスに「承認」キーワードが含まれるか）
     last_content = output_messages[-1].content

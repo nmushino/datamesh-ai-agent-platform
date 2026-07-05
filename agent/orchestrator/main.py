@@ -136,12 +136,28 @@ def ready():
 
 # ノード名 -> 検索中表示用の日本語ラベル
 _NODE_STATUS_LABELS = {
-    "intent_classifier": "意図を判定しています...",
     "chitchat":           "応答を生成しています...",
     "schema_agent":       "スキーマ情報を検索しています...",
     "search_agent":       "データ資産を検索しています...",
     "registration_agent": "登録処理を実行しています...",
     "human_approval":     "承認を待っています...",
+}
+
+# intent_classifier の判定結果 -> 表示用の日本語ラベル。
+# classify_intent はキーワード正規表現による瞬時の判定のため、
+# 「意図を判定しています...」という固定文言のままだと何も進んでいないように
+# 見えてしまう。判定が完了した時点で実際に何と判定されたかを示す。
+_INTENT_LABELS = {
+    "chitchat":        "雑談",
+    "schema_sync":     "スキーマ同期",
+    "metadata_search": "メタデータ検索",
+    "metadata_update": "メタデータ更新",
+    "data_register":   "データ登録",
+    "data_search":     "データ検索",
+    "data_update":      "データ更新",
+    "lineage_check":   "データリネージ確認",
+    "platform_ops":    "プラットフォーム操作",
+    "unknown":         "判定不能(検索エージェントへフォールバック)",
 }
 
 
@@ -167,7 +183,12 @@ def _invoke_graph(req: ChatRequest, thread_id: str, config: dict, status_q: queu
         stream_mode="updates",
     ):
         for node_name, node_output in chunk.items():
-            status_q.put(_NODE_STATUS_LABELS.get(node_name, f"{node_name} を実行しています..."))
+            if node_name == "intent_classifier" and isinstance(node_output, dict):
+                intent = node_output.get("intent", "unknown")
+                label = _INTENT_LABELS.get(intent, intent)
+                status_q.put(f"「{label}」と判定しました。処理を開始します...")
+            else:
+                status_q.put(_NODE_STATUS_LABELS.get(node_name, f"{node_name} を実行しています..."))
             if isinstance(node_output, dict):
                 final_state.update(node_output)
     return final_state
