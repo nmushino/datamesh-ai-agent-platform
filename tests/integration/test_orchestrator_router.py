@@ -16,13 +16,15 @@ from agent.orchestrator.router import classify_intent, route_to_agent
     ("顧客情報を更新してください",             "data_update"),
     ("テーブルの説明を更新して",               "metadata_update"),
     ("データの流れを確認したい",               "lineage_check"),
-    ("こんにちは",                             "unknown"),
+    ("こんにちは",                             "chitchat"),
+    ("よくわからない質問です",                 "unknown"),
 ])
 def test_classify_intent(text, expected_intent):
     assert classify_intent(text) == expected_intent
 
 
 @pytest.mark.parametrize("intent,expected_agent", [
+    ("chitchat",         "chitchat"),
     ("schema_sync",      "schema"),
     ("metadata_search",  "search"),
     ("metadata_update",  "schema"),
