@@ -24,6 +24,7 @@ export default function App() {
   const { tasks: scheduledTasks } = useScheduledTasks();
   const [sending, setSending] = useState(false);
   const [statusText, setStatusText] = useState<string | null>(null);
+  const [showQuickActions, setShowQuickActions] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
 
@@ -40,6 +41,7 @@ export default function App() {
   }, [auth]);
 
   const handleSend = async (message: string) => {
+    setShowQuickActions(false);
     const threadId = activeThreadId ?? createThread();
     appendMessage(threadId, {
       id: crypto.randomUUID(),
@@ -100,8 +102,14 @@ export default function App() {
         <Sidebar
           threads={threads}
           activeThreadId={activeThreadId}
-          onSelect={setActiveThreadId}
-          onCreate={createThread}
+          onSelect={(id) => {
+            setShowQuickActions(false);
+            setActiveThreadId(id);
+          }}
+          onCreate={() => {
+            createThread();
+            setShowQuickActions(true);
+          }}
           onDelete={deleteThread}
           open={sidebarOpen}
           width={sidebarWidth}
@@ -112,6 +120,7 @@ export default function App() {
           thread={activeThread}
           sending={sending}
           statusText={statusText}
+          showQuickActions={showQuickActions}
           onSend={handleSend}
         />
       </div>

@@ -24,7 +24,7 @@ export function PendingIndicator() {
         <span className="pending-dot" />
       </span>
       <span className="pending-meta">
-        考え中… {tokenCount} tokens ・ {(elapsedMs / 1000).toFixed(1)}s
+        考え中… {tokenCount} tokens / {(elapsedMs / 1000).toFixed(1)}s
       </span>
     </div>
   );

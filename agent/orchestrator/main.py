@@ -6,7 +6,8 @@ import time
 import uuid
 import structlog
 from contextlib import asynccontextmanager, ExitStack
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+import base64
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -86,6 +87,25 @@ class ChatRequest(BaseModel):
     user_roles: list[str] = ["viewer"]
 
 
+def _identity_from_bearer_token(request: Request) -> tuple[str | None, list[str]]:
+    """Authorization ヘッダの Keycloak JWT からユーザー名とロールを取り出す。
+    NOTE: 署名検証は行わない (認可判断には使わず、表示・データ絞り込みの
+    UX 用途のみ)。認可が必要な操作は Business API 側の OIDC 検証に従う。"""
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        return None, []
+    token = auth.split(" ", 1)[1]
+    try:
+        payload_b64 = token.split(".")[1]
+        payload_b64 += "=" * (-len(payload_b64) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload_b64))
+        username = claims.get("preferred_username")
+        roles = claims.get("realm_access", {}).get("roles", [])
+        return username, roles
+    except Exception:
+        return None, []
+
+
 class ChatResponse(BaseModel):
     thread_id: str
     reply: str
@@ -148,8 +168,14 @@ def _invoke_graph(req: ChatRequest, thread_id: str, config: dict, status_q: queu
 
 
 @app.post("/api/v1/chat")
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, request: Request):
     thread_id = req.thread_id or str(uuid.uuid4())
+    # NOTE: chat-ui は現状 user_id/user_roles を body に含めないため、
+    # Authorization ヘッダの Keycloak トークンから解決する。
+    username, roles = _identity_from_bearer_token(request)
+    if username:
+        req.user_id = username
+        req.user_roles = roles
     config = {
         "configurable": {
             "thread_id": thread_id,

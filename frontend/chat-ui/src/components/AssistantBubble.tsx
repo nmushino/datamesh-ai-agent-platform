@@ -1,17 +1,22 @@
 import { useEffect, useState } from "react";
 import type { ChatMessage } from "../types";
+import { renderMarkdown } from "../markdown";
 
 interface Props {
   message: ChatMessage;
   animate: boolean;
+  onRegenerate?: () => void;
 }
 
 const TYPE_SPEED_MS = 18;
+const COLLAPSE_LINE_THRESHOLD = 15;
 
 // AIの回答を一文字ずつ表示するタイプライター演出。
 // animateは初回マウント時の値だけを使う(以後の再レンダーで再生し直さないため)。
-export function AssistantBubble({ message, animate }: Props) {
+export function AssistantBubble({ message, animate, onRegenerate }: Props) {
   const [shown, setShown] = useState(animate ? "" : message.content);
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!animate) return;
@@ -27,5 +32,50 @@ export function AssistantBubble({ message, animate }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return <div className="chat-message-bubble">{shown}</div>;
+  const isTyping = shown.length < message.content.length;
+  const lineCount = message.content.split("\n").length;
+  const needsCollapse = lineCount > COLLAPSE_LINE_THRESHOLD;
+  const collapsedContent =
+    needsCollapse && !expanded
+      ? message.content.split("\n").slice(0, COLLAPSE_LINE_THRESHOLD).join("\n")
+      : message.content;
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // クリップボードAPIが使えない環境では何もしない
+    }
+  };
+
+  return (
+    <div>
+      <div className="chat-message-bubble">
+        {isTyping ? shown : renderMarkdown(collapsedContent)}
+      </div>
+      {!isTyping && needsCollapse && (
+        <button
+          type="button"
+          className="chat-message-toggle"
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded ? "折りたたむ" : "すべて表示"}
+        </button>
+      )}
+      {!isTyping && (
+        <div className="chat-message-actions">
+          <button type="button" className="chat-message-action" onClick={handleCopy}>
+            {copied ? "コピーしました" : "コピー"}
+          </button>
+          {onRegenerate && (
+            <button type="button" className="chat-message-action" onClick={onRegenerate}>
+              やり直す
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }

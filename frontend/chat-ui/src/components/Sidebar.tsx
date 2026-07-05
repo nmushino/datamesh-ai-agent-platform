@@ -93,8 +93,10 @@ export function Sidebar({
               <div className="thread-item-main">
                 <span className="thread-item-title">{t.title || "新しい会話"}</span>
                 <span className="thread-item-updated">
-                  {formatUpdatedAt(t.updatedAt ?? t.createdAt)}
-                  {totalTokens(t) > 0 && ` ・ ${totalTokens(t).toLocaleString()} tokens`}
+                  <span>{formatUpdatedAt(t.updatedAt ?? t.createdAt)}</span>
+                  {totalTokens(t) > 0 && (
+                    <span>{totalTokens(t).toLocaleString()} tokens</span>
+                  )}
                 </span>
               </div>
               <button

@@ -8,6 +8,7 @@ interface Props {
   thread: Thread | null;
   sending: boolean;
   statusText?: string | null;
+  showQuickActions?: boolean;
   onSend: (message: string) => void;
 }
 
@@ -24,7 +25,7 @@ const QUICK_ACTIONS = [
   "データ品質",
 ];
 
-export function ChatBody({ thread, sending, statusText, onSend }: Props) {
+export function ChatBody({ thread, sending, statusText, showQuickActions, onSend }: Props) {
   const [input, setInput] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [needsExpand, setNeedsExpand] = useState(false);
@@ -95,28 +96,43 @@ export function ChatBody({ thread, sending, statusText, onSend }: Props) {
       <NetworkBackground />
       <div className="chat-body-overlay" aria-hidden="true" />
       <div className="chat-messages">
-        {!thread && (
+        {(!thread || thread.messages.length === 0) && (
           <div className="chat-placeholder">
-            <div>左側の「+ 新しい会話」から会話を始めてください</div>
-            <div>または下記のメニューから初めてください</div>
-            <div className="chat-quick-actions">
-              {QUICK_ACTIONS.map((action) => (
-                <button
-                  key={action}
-                  type="button"
-                  className="chat-quick-action"
-                  onClick={() => onSend(action)}
-                >
-                  {action}
-                </button>
-              ))}
-            </div>
+            {showQuickActions ? (
+              <>
+                <div>下記のメニューから始めてください</div>
+                <div className="chat-quick-actions">
+                  {QUICK_ACTIONS.map((action) => (
+                    <button
+                      key={action}
+                      type="button"
+                      className="chat-quick-action"
+                      onClick={() => onSend(action)}
+                    >
+                      {action}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div>左側の「+ 新しい会話」から会話を始めてください</div>
+            )}
           </div>
         )}
-        {thread?.messages.map((m) => (
+        {thread?.messages.map((m, idx) => (
           <div key={m.id} className={`chat-message chat-message-${m.role}`}>
             {m.role === "assistant" ? (
-              <AssistantBubble message={m} animate={!seenIdsRef.current.has(m.id)} />
+              <AssistantBubble
+                message={m}
+                animate={!seenIdsRef.current.has(m.id)}
+                onRegenerate={() => {
+                  const precedingUser = thread.messages
+                    .slice(0, idx)
+                    .reverse()
+                    .find((pm) => pm.role === "user");
+                  if (precedingUser) onSend(precedingUser.content);
+                }}
+              />
             ) : (
               <div className="chat-message-bubble">{m.content}</div>
             )}

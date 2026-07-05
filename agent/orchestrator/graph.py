@@ -1,4 +1,5 @@
 import structlog
+from langchain_core.messages import SystemMessage
 from langgraph.graph import StateGraph, END
 
 from agent.common.state import AgentState
@@ -61,11 +62,32 @@ def schema_agent_node(state: AgentState) -> dict:
     }
 
 
+def _build_user_context_message(state: AgentState) -> SystemMessage | None:
+    user_id = state.get("user_id")
+    if not user_id or user_id == "anonymous":
+        return None
+    # NOTE: Keycloak の "admin" ロールを持つユーザーは、OpenMetadata 側の
+    # 実ユーザー名 "admin" のデータオーナーとして扱う (このワークショップ環境の
+    # OpenMetadata データは全て "admin" ユーザーが所有者として登録されているため)。
+    is_admin = "admin" in (state.get("user_roles") or [])
+    owner_name = "admin" if is_admin else user_id
+    return SystemMessage(
+        content=(
+            f"[context] ログイン中のユーザー名: {user_id}"
+            f"{' (OpenMetadata 管理者権限あり)' if is_admin else ''}\n"
+            f"「マイデータ」「自分のデータ」を尋ねられた場合は "
+            f"get_my_data_assets を owner_name=\"{owner_name}\" で呼び出すこと。"
+        )
+    )
+
+
 def search_agent_node(state: AgentState) -> dict:
     log.info("search_agent_invoked", thread_id=state.get("thread_id"))
     agent = _get_agent("search")
-    result = agent.invoke({"messages": state["messages"]})
-    new_messages = result["messages"][len(state["messages"]):]
+    context_msg = _build_user_context_message(state)
+    input_messages = ([context_msg] if context_msg else []) + state["messages"]
+    result = agent.invoke({"messages": input_messages})
+    new_messages = result["messages"][len(input_messages):]
     return {
         "messages": new_messages,
         "active_agent": "search",
