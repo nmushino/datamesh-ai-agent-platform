@@ -1,9 +1,11 @@
 # vLLM ServingRuntime (OpenShift AI / RHOAI)
+# NOTE: namespace はここでは指定しない。`oc apply -n <namespace>` 側で指定すること。
+# redhat-ods-applications は RHOAI が自動生成する保護対象の namespace のため、
+# ユーザーが InferenceService 等を直接作成することはできない。
 apiVersion: serving.kserve.io/v1alpha1
 kind: ServingRuntime
 metadata:
   name: vllm-runtime
-  namespace: redhat-ods-applications
   labels:
     app: vllm-runtime
 spec:
@@ -53,14 +55,15 @@ spec:
         initialDelaySeconds: 180
         periodSeconds: 15
 ---
-# Granite 20B Code Instruct モデルの InferenceService
+# モデルの InferenceService
+# NOTE: name / storageUri 内のモデル名は plaeholder "MODEL_DISPLAY_NAME_PLACEHOLDER"。
+# 適用前に呼び出し側 (aiagent.sh) で実際のモデル名に置換すること。
 apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService
 metadata:
-  name: granite-20b-code-instruct
-  namespace: redhat-ods-applications
+  name: MODEL_DISPLAY_NAME_PLACEHOLDER
   labels:
-    app: granite-20b-code-instruct
+    app: MODEL_DISPLAY_NAME_PLACEHOLDER
   annotations:
     serving.knative.openshift.io/enablePassthrough: "true"
     sidecar.istio.io/inject: "true"
@@ -73,7 +76,7 @@ spec:
       modelFormat:
         name: vLLM
       runtime: vllm-runtime
-      storageUri: "pvc://model-storage/granite-20b-code-instruct"
+      storageUri: "pvc://model-storage/MODEL_DISPLAY_NAME_PLACEHOLDER"
       resources:
         requests:
           nvidia.com/gpu: "1"
@@ -81,15 +84,16 @@ spec:
           nvidia.com/gpu: "1"
 ---
 # モデルストレージ用 PVC
+# NOTE: storageClassName はクラスターのデフォルト StorageClass に任せる
+# (ocs-storagecluster-ceph-rbd は OpenShift Data Foundation 環境専用のため、
+#  AWS/EBS 等の環境ではデフォルト StorageClass を明示的に上書きすること)
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: model-storage
-  namespace: redhat-ods-applications
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: ocs-storagecluster-ceph-rbd
   resources:
     requests:
       storage: 100Gi
