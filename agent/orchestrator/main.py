@@ -164,7 +164,7 @@ async def chat(req: ChatRequest):
             requires_approval=result.get("requires_approval", False),
             approval_action=result.get("approval_action", ""),
             token_usage=result.get("token_usage", 0),
-        ).model_dump()
+        ).dict()
         yield f"data: {json.dumps(payload)}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
