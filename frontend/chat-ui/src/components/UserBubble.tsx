@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ChatMessage } from "../types";
+import { CopyIcon, CheckIcon, RedoIcon, EyeIcon } from "./MessageIcons";
 
 interface Props {
   message: ChatMessage;
@@ -36,23 +37,43 @@ export function UserBubble({ message, onResend }: Props) {
   return (
     <div>
       <div className="chat-message-bubble">{shownContent}</div>
-      {needsCollapse && (
+      <div className="chat-message-actions">
+        {needsCollapse && (
+          <>
+            <button
+              type="button"
+              className="chat-message-icon-action"
+              onClick={() => setExpanded((v) => !v)}
+              aria-label={expanded ? "折りたたむ" : "すべて表示"}
+              title={expanded ? "折りたたむ" : "すべて表示"}
+            >
+              <EyeIcon open={expanded} />
+            </button>
+            <span className="chat-message-actions-sep">|</span>
+          </>
+        )}
         <button
           type="button"
-          className="chat-message-toggle"
-          onClick={() => setExpanded((v) => !v)}
+          className="chat-message-icon-action"
+          onClick={handleCopy}
+          aria-label="コピー"
+          title={copied ? "コピーしました" : "コピー"}
         >
-          {expanded ? "折りたたむ" : "すべて表示"}
-        </button>
-      )}
-      <div className="chat-message-actions">
-        <button type="button" className="chat-message-action" onClick={handleCopy}>
-          {copied ? "コピーしました" : "コピー"}
+          {copied ? <CheckIcon /> : <CopyIcon />}
         </button>
         {onResend && (
-          <button type="button" className="chat-message-action" onClick={onResend}>
-            やり直す
-          </button>
+          <>
+            <span className="chat-message-actions-sep">|</span>
+            <button
+              type="button"
+              className="chat-message-icon-action"
+              onClick={onResend}
+              aria-label="やり直す"
+              title="やり直す(入力欄にコピー)"
+            >
+              <RedoIcon />
+            </button>
+          </>
         )}
       </div>
     </div>

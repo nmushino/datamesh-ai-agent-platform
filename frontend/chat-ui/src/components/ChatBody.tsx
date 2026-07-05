@@ -120,28 +120,15 @@ export function ChatBody({ thread, sending, statusText, showQuickActions, onSend
             )}
           </div>
         )}
-        {thread?.messages.map((m, idx) => (
+        {thread?.messages.map((m) => (
           <div key={m.id} className={`chat-message chat-message-${m.role}`}>
             {m.role === "assistant" ? (
-              <AssistantBubble
-                message={m}
-                animate={!seenIdsRef.current.has(m.id)}
-                onRegenerate={() => {
-                  const precedingUser = thread.messages
-                    .slice(0, idx)
-                    .reverse()
-                    .find((pm) => pm.role === "user");
-                  if (precedingUser) onSend(precedingUser.content);
-                }}
-              />
+              <AssistantBubble message={m} animate={!seenIdsRef.current.has(m.id)} />
             ) : (
-              <UserBubble message={m} onResend={() => onSend(m.content)} />
+              <UserBubble message={m} onResend={() => setInput(m.content)} />
             )}
             {m.role === "assistant" && m.errorReason && (
               <div className="chat-message-error-reason">{m.errorReason}</div>
-            )}
-            {m.role === "assistant" && !!m.tokenUsage && (
-              <div className="chat-message-tokens">{m.tokenUsage.toLocaleString()} tokens</div>
             )}
           </div>
         ))}
@@ -155,55 +142,57 @@ export function ChatBody({ thread, sending, statusText, showQuickActions, onSend
         )}
         <div ref={bottomRef} />
       </div>
-      {window.__APP_CONFIG__?.modelName && (
-        <div className="chat-model-label">利用モデル: {window.__APP_CONFIG__.modelName}</div>
-      )}
-      <div className="chat-input-row">
-        <div className="chat-input-wrapper">
-          <textarea
-            ref={textareaRef}
-            className="chat-input"
-            value={input}
-            placeholder="メッセージを入力... (Enterキーを3回連続で送信、またはボタンをクリック)"
-            rows={1}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-          />
-          {canExpand && (
-            <button
-              type="button"
-              className="chat-input-toggle"
-              onClick={() => setExpanded((v) => !v)}
-              aria-label={expanded ? "入力欄を折りたたむ" : "入力欄を展開する"}
-              title={expanded ? "折りたたむ" : "展開する(最大15行)"}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                <path
-                  d={expanded ? "M6 15l6-6l6 6" : "M6 9l6 6l6-6"}
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
-          )}
-        </div>
-        <button
-          className="chat-send-button"
-          onClick={submit}
-          disabled={sending || !input.trim()}
-          aria-label="送信"
-          title="送信"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-            <path
-              d="M4 20L21 12L4 4L4 10.5L15 12L4 13.5L4 20Z"
-              fill="currentColor"
-              strokeLinejoin="round"
+      <div className="chat-composer">
+        {window.__APP_CONFIG__?.modelName && (
+          <div className="chat-model-label">利用モデル: {window.__APP_CONFIG__.modelName}</div>
+        )}
+        <div className="chat-input-row">
+          <div className="chat-input-wrapper">
+            <textarea
+              ref={textareaRef}
+              className="chat-input"
+              value={input}
+              placeholder="メッセージを入力... (Enterキーを3回連続で送信、またはボタンをクリック)"
+              rows={1}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
             />
-          </svg>
-        </button>
+            {canExpand && (
+              <button
+                type="button"
+                className="chat-input-toggle"
+                onClick={() => setExpanded((v) => !v)}
+                aria-label={expanded ? "入力欄を折りたたむ" : "入力欄を展開する"}
+                title={expanded ? "折りたたむ" : "展開する(最大15行)"}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d={expanded ? "M6 15l6-6l6 6" : "M6 9l6 6l6-6"}
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            )}
+          </div>
+          <button
+            className="chat-send-button"
+            onClick={submit}
+            disabled={sending || !input.trim()}
+            aria-label="送信"
+            title="送信"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M4 20L21 12L4 4L4 10.5L15 12L4 13.5L4 20Z"
+                fill="currentColor"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
       </div>
     </main>
   );

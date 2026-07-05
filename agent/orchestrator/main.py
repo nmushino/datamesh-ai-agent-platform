@@ -17,7 +17,7 @@ from langgraph.checkpoint.postgres import PostgresSaver
 from dotenv import load_dotenv
 load_dotenv()
 
-from agent.orchestrator.graph import create_graph  # noqa: E402
+from agent.orchestrator.graph import create_graph, _status_queue_var  # noqa: E402
 from agent.orchestrator.notifications import get_bridge as get_notification_bridge  # noqa: E402
 from agent.orchestrator.scheduled_tasks import get_bridge as get_scheduled_task_bridge  # noqa: E402
 
@@ -150,6 +150,12 @@ def _invoke_graph(req: ChatRequest, thread_id: str, config: dict, status_q: queu
     # NOTE: invoke() ではなく stream(stream_mode="updates") を使い、ノードが
     # 完了するたびに status_q へ通知する (3秒以上かかる場合に何を検索中か
     # フロントエンドへ表示するため)。実行は一度きりで、副作用が重複することはない。
+    # status_queue は config["configurable"] 経由で渡そうとしたが、
+    # PostgresSaver チェックポインタがそれ以外のキーを除去してしまうため、
+    # contextvars 経由でサブエージェントのノード関数に渡す (この関数は
+    # run_in_executor の同一ワーカースレッド内で最後まで実行されるため、
+    # スレッドをまたがず伝播できる)。
+    _status_queue_var.set(status_q)
     for chunk in _graph.stream(
         {
             "messages": [HumanMessage(content=req.message)],
@@ -225,7 +231,12 @@ async def chat(req: ChatRequest, request: Request):
             yield f"data: {json.dumps({'error': f'エージェント実行エラー: {e}', 'thread_id': thread_id})}\n\n"
             return
 
-        last_message = result["messages"][-1]
+        messages = result.get("messages") or []
+        if not messages:
+            log.error("chat_empty_result", thread_id=thread_id)
+            yield f"data: {json.dumps({'error': 'エージェント実行エラー: 応答を生成できませんでした', 'thread_id': thread_id})}\n\n"
+            return
+        last_message = messages[-1]
         reply = last_message.content if hasattr(last_message, "content") else str(last_message)
         payload = ChatResponse(
             thread_id=thread_id,

@@ -1,11 +1,15 @@
 import { useEffect, useState } from "react";
 import type { ChatMessage } from "../types";
 import { renderMarkdown } from "../markdown";
+import { CopyIcon, CheckIcon } from "./MessageIcons";
 
 interface Props {
   message: ChatMessage;
   animate: boolean;
-  onRegenerate?: () => void;
+}
+
+function formatTokens(n: number): string {
+  return `${n.toLocaleString()} tokens`;
 }
 
 const TYPE_SPEED_MS = 18;
@@ -13,7 +17,7 @@ const COLLAPSE_LINE_THRESHOLD = 15;
 
 // AIの回答を一文字ずつ表示するタイプライター演出。
 // animateは初回マウント時の値だけを使う(以後の再レンダーで再生し直さないため)。
-export function AssistantBubble({ message, animate, onRegenerate }: Props) {
+export function AssistantBubble({ message, animate }: Props) {
   // NOTE: 過去に localStorage へ保存された旧スキーマのメッセージに content が
   // 欠けているケースがあり、そのまま .length へアクセスするとアプリ全体が
   // クラッシュする (真っ白画面) ため、必ず空文字にフォールバックする。
@@ -70,14 +74,21 @@ export function AssistantBubble({ message, animate, onRegenerate }: Props) {
       )}
       {!isTyping && (
         <div className="chat-message-actions">
-          <button type="button" className="chat-message-action" onClick={handleCopy}>
-            {copied ? "コピーしました" : "コピー"}
-          </button>
-          {onRegenerate && (
-            <button type="button" className="chat-message-action" onClick={onRegenerate}>
-              やり直す
-            </button>
+          {!!message.tokenUsage && (
+            <>
+              <span className="chat-message-actions-text">{formatTokens(message.tokenUsage)}</span>
+              <span className="chat-message-actions-sep">|</span>
+            </>
           )}
+          <button
+            type="button"
+            className="chat-message-icon-action"
+            onClick={handleCopy}
+            aria-label="コピー"
+            title={copied ? "コピーしました" : "コピー"}
+          >
+            {copied ? <CheckIcon /> : <CopyIcon />}
+          </button>
         </div>
       )}
     </div>
