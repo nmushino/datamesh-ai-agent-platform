@@ -24,6 +24,10 @@ spec:
       type: string
       default: "false"
       description: "true にすると GraalVM Native ビルドを行う（時間がかかる）"
+    - name: enable-gitops-commit
+      type: string
+      default: "false"
+      description: "true の場合のみ GitOps リポジトリへコミット・プッシュする (git-credentials Secret が必要)"
   workspaces:
     - name: shared-workspace
     # NOTE: maven-cache (静的PVC) は shared-workspace (volumeClaimTemplate) と
@@ -171,10 +175,14 @@ spec:
         - name: dockerconfig
           workspace: docker-credentials
 
-    # GitOps 更新
+    # GitOps 更新 (任意)
     - name: update-gitops
       runAfter:
         - build-image
+      when:
+        - input: $(params.enable-gitops-commit)
+          operator: in
+          values: ["true"]
       taskRef:
         name: update-kustomize-image
         kind: Task

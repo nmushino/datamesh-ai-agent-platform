@@ -1,5 +1,6 @@
 package com.droneplatform.customer;
 
+import com.droneplatform.metadata.MetadataSyncService;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
@@ -20,11 +21,19 @@ public class CustomerResource {
     @Inject
     CustomerService customerService;
 
+    @Inject
+    MetadataSyncService metadataSync;
+
     @POST
     @RolesAllowed({"operator", "admin"})
     @Operation(summary = "顧客登録", description = "新規顧客を登録します")
     public Response register(@Valid CustomerRequest req) {
         var entity = customerService.register(req);
+        // NOTE: register() の @Transactional コミット後に呼ぶこと。
+        // トランザクション内から呼ぶと、非同期実行スレッドが同じ JTA トランザクションに
+        // enlist された DB コネクションへ同時アクセスし、
+        // "Enlisted connection used without active transaction" でコミットが失敗する。
+        metadataSync.syncCustomerMetadataAsync();
         return Response.status(201).entity(entity).build();
     }
 

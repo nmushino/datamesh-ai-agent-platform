@@ -23,6 +23,10 @@ spec:
       type: string
       default: deployment/kustomize/overlays/dev
       description: デプロイ先 overlay パス
+    - name: enable-gitops-commit
+      type: string
+      default: "false"
+      description: "true の場合のみ GitOps リポジトリへコミット・プッシュする (git-credentials Secret が必要)"
   workspaces:
     - name: shared-workspace
       description: パイプライン全体で共有するワークスペース
@@ -132,10 +136,14 @@ spec:
         - name: source
           workspace: shared-workspace
 
-    # ⑥ Kustomize の image タグを更新して GitOps でデプロイ
+    # ⑥ Kustomize の image タグを更新して GitOps でデプロイ (任意)
     - name: update-gitops
       runAfter:
         - image-scan
+      when:
+        - input: $(params.enable-gitops-commit)
+          operator: in
+          values: ["true"]
       taskRef:
         name: update-kustomize-image
         kind: Task

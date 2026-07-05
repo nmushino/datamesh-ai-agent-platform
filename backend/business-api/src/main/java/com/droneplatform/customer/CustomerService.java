@@ -1,7 +1,6 @@
 package com.droneplatform.customer;
 
 import com.droneplatform.kafka.AgentEventProducer;
-import com.droneplatform.metadata.MetadataSyncService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -15,9 +14,6 @@ public class CustomerService {
 
     @Inject
     AgentEventProducer eventProducer;
-
-    @Inject
-    MetadataSyncService metadataSync;
 
     @Transactional
     public CustomerEntity register(CustomerRequest req) {
@@ -36,7 +32,6 @@ public class CustomerService {
         entity.persist();
 
         eventProducer.sendCustomerEvent("registered", entity);
-        metadataSync.syncCustomerMetadataAsync();
 
         return entity;
     }
