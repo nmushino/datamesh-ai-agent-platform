@@ -26,6 +26,18 @@ def _get_agent(name: str):
     return _AGENTS[name]
 
 
+# NOTE: AgentState["messages"] は Annotated[list, operator.add] で
+# チェックポインタ経由で会話全体を蓄積し続けるため、長い会話では
+# vLLM の max-model-len (8192) を超えて 400 エラーになる。LLM へ渡す
+# 直前には必ず直近 N 件だけに絞ること。
+RECENT_MESSAGES_LIMIT = 10
+
+
+def _recent_messages(state: AgentState) -> list:
+    messages = state["messages"]
+    return messages[-RECENT_MESSAGES_LIMIT:] if len(messages) > RECENT_MESSAGES_LIMIT else messages
+
+
 def intent_classifier_node(state: AgentState) -> dict:
     last_message = state["messages"][-1]
     text = last_message.content if hasattr(last_message, "content") else str(last_message)
@@ -40,7 +52,7 @@ def chitchat_node(state: AgentState) -> dict:
     # 挨拶・雑談は毎回確実に高速応答させるためのショートカット経路。
     log.info("chitchat_invoked", thread_id=state.get("thread_id"))
     llm = get_llm()
-    ai_message = llm.invoke(state["messages"])
+    ai_message = llm.invoke(_recent_messages(state))
     return {
         "messages": [ai_message],
         "active_agent": "chitchat",
@@ -52,8 +64,9 @@ def chitchat_node(state: AgentState) -> dict:
 def schema_agent_node(state: AgentState) -> dict:
     log.info("schema_agent_invoked", thread_id=state.get("thread_id"))
     agent = _get_agent("schema")
-    result = agent.invoke({"messages": state["messages"]})
-    new_messages = result["messages"][len(state["messages"]):]
+    input_messages = _recent_messages(state)
+    result = agent.invoke({"messages": input_messages})
+    new_messages = result["messages"][len(input_messages):]
     return {
         "messages": new_messages,
         "active_agent": "schema",
@@ -85,7 +98,7 @@ def search_agent_node(state: AgentState) -> dict:
     log.info("search_agent_invoked", thread_id=state.get("thread_id"))
     agent = _get_agent("search")
     context_msg = _build_user_context_message(state)
-    input_messages = ([context_msg] if context_msg else []) + state["messages"]
+    input_messages = ([context_msg] if context_msg else []) + _recent_messages(state)
     result = agent.invoke({"messages": input_messages})
     new_messages = result["messages"][len(input_messages):]
     return {
@@ -99,8 +112,9 @@ def search_agent_node(state: AgentState) -> dict:
 def registration_agent_node(state: AgentState) -> dict:
     log.info("registration_agent_invoked", thread_id=state.get("thread_id"))
     agent = _get_agent("registration")
-    result = agent.invoke({"messages": state["messages"]})
-    output_messages = result["messages"][len(state["messages"]):]
+    input_messages = _recent_messages(state)
+    result = agent.invoke({"messages": input_messages})
+    output_messages = result["messages"][len(input_messages):]
 
     # 承認フラグの検出（レスポンスに「承認」キーワードが含まれるか）
     last_content = result["messages"][-1].content if result["messages"] else ""

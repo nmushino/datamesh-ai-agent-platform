@@ -628,6 +628,24 @@ body,
   white-space: pre-wrap;
 }
 
+/* Markdown レンダリング後は <p>/<h3-6> のデフォルト margin により
+   バブル上下に余分な空行が生まれるため、明示的に詰める */
+.chat-message-bubble p,
+.chat-message-bubble h3,
+.chat-message-bubble h4,
+.chat-message-bubble h5,
+.chat-message-bubble h6 {
+  margin: 0.4em 0;
+}
+
+.chat-message-bubble > *:first-child {
+  margin-top: 0;
+}
+
+.chat-message-bubble > *:last-child {
+  margin-bottom: 0;
+}
+
 .chat-message-user .chat-message-bubble {
   background: #1a1a2e;
   color: white;

@@ -3,6 +3,7 @@ import type { Thread } from "../types";
 import { NetworkBackground } from "./NetworkBackground";
 import { PendingIndicator } from "./PendingIndicator";
 import { AssistantBubble } from "./AssistantBubble";
+import { UserBubble } from "./UserBubble";
 
 interface Props {
   thread: Thread | null;
@@ -134,7 +135,7 @@ export function ChatBody({ thread, sending, statusText, showQuickActions, onSend
                 }}
               />
             ) : (
-              <div className="chat-message-bubble">{m.content}</div>
+              <UserBubble message={m} onResend={() => onSend(m.content)} />
             )}
             {m.role === "assistant" && m.errorReason && (
               <div className="chat-message-error-reason">{m.errorReason}</div>
