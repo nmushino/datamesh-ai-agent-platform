@@ -173,7 +173,11 @@ def _shrink_max_tokens_for_error(error_message: str, requested_max_tokens: int) 
     if not m:
         return None
     model_limit, _requested_total, prompt_tokens = (int(g) for g in m.groups())
-    safety_margin = 50
+    # NOTE: このオーバーフローがツール呼び出し前のプロンプトで起きた場合、
+    # リトライ後にツール結果が追加されてプロンプトがさらに膨らみ、縮小した
+    # max_tokens でも再度超過することがある(実際に観測済み)。ツール結果1件分
+    # を見込んだ余裕を残すため、マージンを大きめに取る。
+    safety_margin = 2000
     safe_max = model_limit - prompt_tokens - safety_margin
     if safe_max < 256:
         return None

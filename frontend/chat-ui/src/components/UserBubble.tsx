@@ -7,7 +7,7 @@ interface Props {
   onResend?: () => void;
 }
 
-const COLLAPSE_LINE_THRESHOLD = 30;
+const COLLAPSE_LINE_THRESHOLD = 15;
 
 // ユーザー送信メッセージ側の表示。長文の折りたたみ・コピー・再送信ボタンを
 // AssistantBubble と揃えて提供する (アシスタント側にしか無かったものを

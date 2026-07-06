@@ -28,7 +28,7 @@ def search_data_assets(
     log.info("search_data_assets", query=query, asset_type=asset_type)
     # NOTE: description (特にデータプロダクト/契約情報) が非常に長い場合があり、
     # 未加工のまま複数件返すと vLLM の max-model-len (8192) を容易に超えるため切り詰める
-    DESCRIPTION_MAX_CHARS = 300
+    DESCRIPTION_MAX_CHARS = 150
     try:
         client = get_openmetadata_client()
         results = client.search_assets(query, asset_type, limit)
@@ -68,7 +68,7 @@ def get_recent_activity(limit: int = 10) -> dict:
          "total": int, "success": bool}
     """
     log.info("get_recent_activity", limit=limit)
-    DESCRIPTION_MAX_CHARS = 300
+    DESCRIPTION_MAX_CHARS = 150
     try:
         client = get_openmetadata_client()
         results = client.get_recent_activity(limit)
@@ -96,7 +96,7 @@ def get_my_data_assets(owner_name: str, limit: int = 10) -> dict:
          "total": int, "success": bool}
     """
     log.info("get_my_data_assets", owner_name=owner_name)
-    DESCRIPTION_MAX_CHARS = 300
+    DESCRIPTION_MAX_CHARS = 150
     try:
         client = get_openmetadata_client()
         results = client.get_owned_assets(owner_name, limit)
