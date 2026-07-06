@@ -138,6 +138,18 @@ class OpenMetadataClientWrapper:
         )
         return lineage.dict() if lineage else {}
 
+    def get_quality_test_cases(self, table_fqn: str, limit: int = 20) -> list[dict]:
+        # NOTE: get_table() 経由の pydantic SDK モデルはサーバー(1.13.0)とSDK(1.3.0)の
+        # スキーマ差分で ValidationError になり使えないため、生の REST API を叩く。
+        # /data-quality 画面が表示するのと同じ、テーブルに紐づくテストケース定義と
+        # 直近の実行結果(testCaseResult)を返す。
+        entity_link = quote_plus(f"<#E::table::{table_fqn}>")
+        response = self._client.client.get(
+            f"/dataQuality/testCases/search/list"
+            f"?entityLink={entity_link}&fields=testCaseResult&limit={limit}"
+        )
+        return (response or {}).get("data", [])
+
     def create_test_case(self, test_case: dict) -> dict:
         from metadata.generated.schema.api.tests.createTestCase import CreateTestCaseRequest
         result = self._client.create_or_update(data=CreateTestCaseRequest(**test_case))

@@ -70,7 +70,9 @@ def create_quality_rule(
 @tool
 def get_quality_metrics(table_fqn: str) -> dict:
     """
-    テーブルのデータ品質メトリクスを取得します。
+    テーブルのデータ品質テストケース(OpenMetadataのData Quality画面と同じ情報)を
+    取得します。テストがまだ一度も実行されていない場合、個々のルールの
+    lastResult は "未実行" になる(これは異常ではない)。
 
     Args:
         table_fqn: テーブルの完全修飾名
@@ -78,27 +80,52 @@ def get_quality_metrics(table_fqn: str) -> dict:
     Returns:
         {
           "fqn": str,
-          "qualityScore": float,  # 0.0-100.0
-          "rules": [{"name": str, "status": "Success"|"Failed", "lastRunAt": str}],
+          "totalRules": int,
+          "passedRules": int,
+          "failedRules": int,
+          "notRunRules": int,
+          "rules": [{"name": str, "testDefinition": str, "lastResult": str}],
           "success": bool
         }
     """
     log.info("get_quality_metrics", table_fqn=table_fqn)
     try:
         client = get_openmetadata_client()
-        table = client.get_table(table_fqn)
-        if not table:
-            return {"error": f"テーブルが見つかりません: {table_fqn}", "success": False}
+        test_cases = client.get_quality_test_cases(table_fqn)
+        if not test_cases:
+            return {
+                "fqn": table_fqn,
+                "totalRules": 0,
+                "rules": [],
+                "success": True,
+                "message": "このテーブルにはデータ品質テストが定義されていません。",
+            }
 
-        test_suite = table.get("testSuite", {})
-        summary = test_suite.get("summary", {}) if test_suite else {}
+        rules = []
+        passed = failed = not_run = 0
+        for tc in test_cases:
+            result = tc.get("testCaseResult") or {}
+            status = result.get("testCaseStatus", "未実行")
+            if status == "Success":
+                passed += 1
+            elif status == "Failed":
+                failed += 1
+            else:
+                not_run += 1
+                status = "未実行"
+            rules.append({
+                "name": tc.get("name", ""),
+                "testDefinition": (tc.get("testDefinition") or {}).get("name", ""),
+                "lastResult": status,
+            })
 
         return {
             "fqn": table_fqn,
-            "qualityScore": summary.get("success", 0) / max(summary.get("total", 1), 1) * 100,
-            "totalRules": summary.get("total", 0),
-            "passedRules": summary.get("success", 0),
-            "failedRules": summary.get("failed", 0),
+            "totalRules": len(rules),
+            "passedRules": passed,
+            "failedRules": failed,
+            "notRunRules": not_run,
+            "rules": rules,
             "success": True,
         }
     except Exception as e:
