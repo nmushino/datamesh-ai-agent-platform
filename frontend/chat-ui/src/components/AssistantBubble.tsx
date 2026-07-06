@@ -14,7 +14,7 @@ function formatTokens(n: number): string {
 }
 
 const TYPE_SPEED_MS = 18;
-const COLLAPSE_LINE_THRESHOLD = 15;
+const COLLAPSE_LINE_THRESHOLD = 30;
 
 // AIの回答を一文字ずつ表示するタイプライター演出。
 // animateは初回マウント時の値だけを使う(以後の再レンダーで再生し直さないため)。
