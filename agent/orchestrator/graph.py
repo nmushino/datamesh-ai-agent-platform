@@ -2,7 +2,7 @@ import contextvars
 import json
 import re
 import structlog
-from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import StateGraph, END
 
 from agent.common.state import AgentState
@@ -95,18 +95,35 @@ _TOOL_STATUS_LABELS = {
 _MAX_TOOL_ITERATIONS = 5
 
 TRUNCATION_NOTICE = (
-    "\n\n⚠️ 応答が長さ制限(max_tokens)により途中で切れました。"
+    "\n\n⚠️ 応答が長いため、規定回数の自動継続後もまだ途中です。"
     "チャット設定の応答の長さを「中」以上に変更して、もう一度お試しください。"
 )
 
+# 応答が max_tokens で切れた場合に自動で「続き」を生成させる最大回数。
+# 1回で終わらせず何度でも切り出して結合してほしいという要望に対応する。
+_MAX_CONTINUATIONS = 4
 
-def _mark_if_truncated(ai_message: AIMessage) -> AIMessage:
-    """LLMの応答が max_tokens に達して途中で切れた場合、ユーザーに気づいて
-    もらえるよう通知文を追記する(finish_reason == "length")。"""
-    finish_reason = (ai_message.response_metadata or {}).get("finish_reason")
-    if finish_reason == "length":
-        return AIMessage(content=str(ai_message.content) + TRUNCATION_NOTICE)
-    return ai_message
+
+def _continue_if_truncated(llm, messages: list, ai_message: AIMessage, status_q=None) -> AIMessage:
+    """LLMの応答が max_tokens に達して途中で切れた場合(finish_reason == "length")、
+    「続きを出力してください」と自動で追加リクエストし、切れなくなるか
+    _MAX_CONTINUATIONS 回に達するまで繰り返して結合する。"""
+    full_content = str(ai_message.content)
+    working_messages = list(messages) + [ai_message]
+    continuations = 0
+    while (ai_message.response_metadata or {}).get("finish_reason") == "length" and continuations < _MAX_CONTINUATIONS:
+        if status_q:
+            status_q.put(f"応答が長いため続きを生成しています... ({continuations + 1}/{_MAX_CONTINUATIONS})")
+        working_messages.append(
+            HumanMessage(content="続きをそのまま出力してください(見出しや既に出力した行を繰り返さないこと)。")
+        )
+        ai_message = llm.invoke(working_messages)
+        full_content += str(ai_message.content)
+        working_messages.append(ai_message)
+        continuations += 1
+    if (ai_message.response_metadata or {}).get("finish_reason") == "length":
+        full_content += TRUNCATION_NOTICE
+    return AIMessage(content=full_content)
 
 
 def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, input_messages: list) -> list:
@@ -124,7 +141,7 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
         ai_message = llm_with_tools.invoke(messages)
         tool_calls = getattr(ai_message, "tool_calls", None) or []
         if not tool_calls:
-            ai_message = _mark_if_truncated(ai_message)
+            ai_message = _continue_if_truncated(llm_with_tools, messages, ai_message, status_q)
         messages.append(ai_message)
         new_messages.append(ai_message)
         if not tool_calls:
@@ -205,7 +222,7 @@ def chitchat_node(state: AgentState) -> dict:
         log.warning("context_length_retry", node="chitchat", safe_max_tokens=safe_max)
         llm = get_llm(enable_thinking=enable_thinking, max_tokens=safe_max)
         ai_message = llm.invoke(messages)
-    ai_message = _mark_if_truncated(ai_message)
+    ai_message = _continue_if_truncated(llm, messages, ai_message, _status_queue_var.get())
     return {
         "messages": [ai_message],
         "active_agent": "chitchat",
