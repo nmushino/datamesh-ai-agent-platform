@@ -115,15 +115,47 @@ def _continue_if_truncated(llm, messages: list, ai_message: AIMessage, status_q=
         if status_q:
             status_q.put(f"応答が長いため続きを生成しています... ({continuations + 1}/{_MAX_CONTINUATIONS})")
         working_messages.append(
-            HumanMessage(content="続きをそのまま出力してください(見出しや既に出力した行を繰り返さないこと)。")
+            HumanMessage(content=(
+                "直前のあなたの発言は表の行の途中で切れています。その最後の行を"
+                "先頭から書き直し、正しく完成させたうえで、続きの行を同じ表の"
+                "フォーマット(| 列 | 列 |)で追加していってください。見出し(###)や"
+                "表のヘッダー行・区切り線(| --- | --- |)は再度出力しないこと。"
+                "新しい表を始めないこと。"
+            ))
         )
         ai_message = llm.invoke(working_messages)
-        full_content += str(ai_message.content)
+        # NOTE: モデルは「切れた最後の行」を先頭から書き直す挙動をするため、
+        # こちらの蓄積側でもその未完成な最後の行を切り捨ててから継続分を
+        # 連結する(そのまま連結すると同じ行が重複してしまう)。
+        prior_lines = full_content.rstrip("\n").split("\n")
+        full_content = "\n".join(prior_lines[:-1]) if len(prior_lines) > 1 else ""
+        full_content += ("\n" if full_content else "") + str(ai_message.content)
         working_messages.append(ai_message)
         continuations += 1
     if (ai_message.response_metadata or {}).get("finish_reason") == "length":
         full_content += TRUNCATION_NOTICE
     return AIMessage(content=full_content)
+
+
+_SITE_KEYWORD_TO_FQN_PART = {"Aサイト": "asite", "Bサイト": "bsite", "Cサイト": "csite"}
+
+
+def _normalize_site_query(tool_name: str, args: dict) -> dict:
+    """search_data_assets の query に「Aサイト」等の日本語がそのまま
+    残っている場合、FQN ワイルドカードクエリに強制的に書き換える。
+    プロンプトでの指示だけでは徹底されないことがあり(他サイトの複製先
+    説明にも一致してしまい、結果が肥大化してコンテキスト長を超える
+    原因になっていた)、確実性のためコード側でも補正する。"""
+    if tool_name != "search_data_assets":
+        return args
+    query = args.get("query", "")
+    for keyword, fqn_part in _SITE_KEYWORD_TO_FQN_PART.items():
+        if keyword in query and "fullyQualifiedName:" not in query:
+            new_args = dict(args)
+            new_args["query"] = f"fullyQualifiedName:*{fqn_part}*"
+            log.warning("site_query_normalized", original_query=query, new_query=new_args["query"])
+            return new_args
+    return args
 
 
 def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, input_messages: list) -> list:
@@ -153,7 +185,8 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
                     status_q.put(
                         _TOOL_STATUS_LABELS.get(tc["name"], f"{tc['name']} を実行しています...")
                     )
-                result = tool_fn.invoke(tc["args"])
+                tool_args = _normalize_site_query(tc["name"], tc["args"])
+                result = tool_fn.invoke(tool_args)
             else:
                 result = {"error": f"unknown tool: {tc['name']}", "success": False}
             tool_message = ToolMessage(
@@ -270,13 +303,26 @@ def _invoke_subagent_ensured(
     return [AIMessage(content="すみません、応答が長くなりすぎたため生成できませんでした。質問の範囲を絞る(例:サイトや資産タイプを指定する)か、チャット設定の応答の長さを変更してもう一度お試しください。")]
 
 
+# ツール付きサブエージェント(schema/search/registration)はシステムプロンプト+
+# ツールスキーマ+ツール実行結果だけで実測 6000 トークン前後を消費し、8192の
+# 上限に対する余地が乏しい。チャット設定で「高」(4096)や「最高」(8192)を
+# 選択すると、それだけで即座にコンテキスト長を超えてしまうため、ツール付き
+# エージェントに限りユーザー選択値をこの上限でクランプする(雑談(chitchat)は
+# ツールスキーマを持たずプロンプトがずっと小さいため対象外)。
+_TOOL_AGENT_MAX_TOKENS_CAP = 2048
+
+
+def _clamp_tool_agent_max_tokens(requested_max_tokens: int) -> int:
+    return min(requested_max_tokens, _TOOL_AGENT_MAX_TOKENS_CAP)
+
+
 def schema_agent_node(state: AgentState) -> dict:
     log.info("schema_agent_invoked", thread_id=state.get("thread_id"))
     input_messages = _recent_messages(state)
     new_messages = _invoke_subagent_ensured(
         "schema",
         state.get("enable_thinking", False),
-        state.get("max_tokens", 1024),
+        _clamp_tool_agent_max_tokens(state.get("max_tokens", 1024)),
         input_messages,
     )
     return {
@@ -313,7 +359,7 @@ def search_agent_node(state: AgentState) -> dict:
     new_messages = _invoke_subagent_ensured(
         "search",
         state.get("enable_thinking", False),
-        state.get("max_tokens", 1024),
+        _clamp_tool_agent_max_tokens(state.get("max_tokens", 1024)),
         input_messages,
     )
     return {
@@ -330,7 +376,7 @@ def registration_agent_node(state: AgentState) -> dict:
     output_messages = _invoke_subagent_ensured(
         "registration",
         state.get("enable_thinking", False),
-        state.get("max_tokens", 1024),
+        _clamp_tool_agent_max_tokens(state.get("max_tokens", 1024)),
         input_messages,
     )
 
