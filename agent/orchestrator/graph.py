@@ -33,35 +33,24 @@ _SUBAGENT_CONFIGS = {
 # NOTE: AgentState["messages"] は Annotated[list, operator.add] で
 # チェックポインタ経由で会話全体を蓄積し続けるため、長い会話では
 # vLLM の max-model-len (8192) を超えて 400 エラーになる。LLM へ渡す
-# 直前には必ず直近 N 件だけに絞ること。
-# ツール実行結果(ToolMessage)は1件で数千文字になることがあり、10件では
-# 大きな結果が複数含まれるだけで出力用の余地がほぼ無くなり空応答の原因に
-# なっていたため、より保守的な件数に絞る。
-RECENT_MESSAGES_LIMIT = 6
-
-
-# 過去のツール実行結果を再送信する際の切り詰め上限。現在のターンで新たに
-# 呼び出すツール結果は search_tools 側で300文字に切り詰め済みだが、過去の
-# ターンの結果は会話継続のための参考情報でしかないため、さらに短くしてよい。
-OLD_TOOL_MESSAGE_MAX_CHARS = 200
+# 直前には必ず直近 N 件(HumanMessageと最終回答のAIMessageのみ。ツール
+# 呼び出し過程は _recent_messages 側で除外する)だけに絞ること。
+RECENT_MESSAGES_LIMIT = 4
 
 
 def _recent_messages(state: AgentState) -> list:
     messages = state["messages"]
-    recent = messages[-RECENT_MESSAGES_LIMIT:] if len(messages) > RECENT_MESSAGES_LIMIT else messages
-    # 直近のツール結果(このターンで初めて使う可能性がある最後の1件)は残し、
-    # それより前のToolMessageだけを切り詰めてコンテキストの肥大化を防ぐ。
-    trimmed = []
-    for i, m in enumerate(recent):
-        is_last = i == len(recent) - 1
-        if isinstance(m, ToolMessage) and not is_last and len(str(m.content)) > OLD_TOOL_MESSAGE_MAX_CHARS:
-            m = ToolMessage(
-                content=str(m.content)[:OLD_TOOL_MESSAGE_MAX_CHARS] + "...(省略)",
-                tool_call_id=m.tool_call_id,
-                name=m.name,
-            )
-        trimmed.append(m)
-    return trimmed
+    # 過去のターンのツール呼び出し過程(tool_callsを持つAIMessageとその
+    # ToolMessage)は、そのターンの回答を生成した時点で役目を終えており、
+    # 将来のターンの会話継続には不要なため、履歴からは除外する
+    # (1ターンにつき Human, AIMessage(tool_call), ToolMessage, 最終AIMessage の
+    # 最大4件が積み上がり、これをそのまま残すとすぐにコンテキストが
+    # 肥大化してしまうため)。HumanMessageと最終回答のAIMessageだけを残す。
+    filtered = [
+        m for m in messages
+        if not isinstance(m, ToolMessage) and not (isinstance(m, AIMessage) and getattr(m, "tool_calls", None))
+    ]
+    return filtered[-RECENT_MESSAGES_LIMIT:] if len(filtered) > RECENT_MESSAGES_LIMIT else filtered
 
 
 # NOTE: config["configurable"] 経由で status キューを渡そうとしたが、
