@@ -173,13 +173,16 @@ def _shrink_max_tokens_for_error(error_message: str, requested_max_tokens: int) 
     if not m:
         return None
     model_limit, _requested_total, prompt_tokens = (int(g) for g in m.groups())
-    # NOTE: このオーバーフローがツール呼び出し前のプロンプトで起きた場合、
-    # リトライ後にツール結果が追加されてプロンプトがさらに膨らみ、縮小した
-    # max_tokens でも再度超過することがある(実際に観測済み)。ツール結果1件分
-    # を見込んだ余裕を残すため、マージンを大きめに取る。
-    safety_margin = 2000
+    # NOTE: マージンを大きく取りすぎると、ツール呼び出し後の大きいプロンプト
+    # (既にモデル上限に近い)に対して安全なmax_tokensがマイナスになり、
+    # 縮小自体を諦めてしまう(実際に観測済み)。この時点のプロンプトサイズは
+    # 確定値であり、これ以上ふくらむのは今回の完了トークン分だけなので、
+    # マージンは小さくてよい。フォールバック文言を返すより、たとえ短くても
+    # 応答を切り詰めて返す方(truncation notice で利用者に伝わる)を優先し、
+    # 諦める閾値も低くする。
+    safety_margin = 100
     safe_max = model_limit - prompt_tokens - safety_margin
-    if safe_max < 256:
+    if safe_max < 32:
         return None
     return min(safe_max, requested_max_tokens)
 
