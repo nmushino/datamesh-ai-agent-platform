@@ -24,9 +24,6 @@ def register_bom(
             例: [{"partNumber": "PART-001", "name": "モーター", "quantity": 4}]
         version: BOM バージョン (デフォルト: "1.0")
         description: BOM の説明（任意）
-
-    Returns:
-        {"bomId": str, "productName": str, "componentCount": int, "success": bool}
     """
     log.info("register_bom", bom_id=bom_id, product=product_name)
     try:
@@ -60,10 +57,6 @@ def search_bom(
         query: 検索クエリ（BOM ID・製品名・部品番号で検索）
         product_name: 製品名フィルタ（任意）
         limit: 最大取得件数
-
-    Returns:
-        {"boms": [{"bomId": str, "productName": str, "version": str, "componentCount": int}],
-         "total": int, "success": bool}
     """
     try:
         client = get_business_api_client()
@@ -84,9 +77,6 @@ def get_bom(bom_id: str) -> dict:
 
     Args:
         bom_id: BOM ID
-
-    Returns:
-        BOM 詳細情報（components を含む）、または {"error": str, "success": False}
     """
     try:
         client = get_business_api_client()

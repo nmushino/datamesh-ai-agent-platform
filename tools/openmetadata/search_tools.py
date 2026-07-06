@@ -20,10 +20,6 @@ def search_data_assets(
         asset_type: 絞り込む資産タイプ。"table", "topic", "pipeline", "data_product", "all" のいずれか。
             「データプロダクト」を尋ねられた場合は必ず "data_product" を指定すること。
         limit: 最大取得件数 (1-100)
-
-    Returns:
-        {"assets": [{"fqn": str, "name": str, "type": str, "description": str, "tags": list}],
-         "total": int, "success": bool}
     """
     log.info("search_data_assets", query=query, asset_type=asset_type)
     # NOTE: description (特にデータプロダクト/契約情報) が非常に長い場合があり、
@@ -61,11 +57,6 @@ def get_recent_activity(limit: int = 10) -> dict:
 
     Args:
         limit: 最大取得件数 (1-100)
-
-    Returns:
-        {"assets": [{"fqn": str, "name": str, "type": str, "description": str,
-                      "owners": list, "updatedAt": str}],
-         "total": int, "success": bool}
     """
     log.info("get_recent_activity", limit=limit)
     DESCRIPTION_MAX_CHARS = 150
@@ -89,11 +80,6 @@ def get_my_data_assets(owner_name: str, limit: int = 10) -> dict:
     Args:
         owner_name: オーナーのユーザー名 (例: "admin")
         limit: 最大取得件数 (1-100)
-
-    Returns:
-        {"assets": [{"fqn": str, "name": str, "type": str, "description": str,
-                      "owners": list, "updatedAt": str}],
-         "total": int, "success": bool}
     """
     log.info("get_my_data_assets", owner_name=owner_name)
     DESCRIPTION_MAX_CHARS = 150

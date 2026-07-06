@@ -15,14 +15,6 @@ def get_data_lineage(fqn: str, depth: int = 3) -> dict:
              先に search_data_assets で検索して確認すること
              (例: "external-shop-cluster-postgres-asite:5432.droneshopdb.droneshop.orders")
         depth: リネージの深さ (1-5)。大きいほど広範囲を取得
-
-    Returns:
-        {
-          "fqn": str,
-          "upstream": [{"fqn": str, "name": str, "type": str}],
-          "downstream": [{"fqn": str, "name": str, "type": str}],
-          "success": bool
-        }
     """
     log.info("get_data_lineage", fqn=fqn, depth=depth)
     try:

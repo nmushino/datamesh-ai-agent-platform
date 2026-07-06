@@ -20,10 +20,6 @@ def get_database_schema(
             (例: "external-shop-cluster-postgres-asite:5432")
         database_name: データベース名 (例: "droneshopdb")
         schema_name: スキーマ名 (例: "droneshop")
-
-    Returns:
-        スキーマ情報の辞書。テーブル一覧・カラム情報を含む。
-        存在しない場合は {"error": str, "success": False}
     """
     fqn = f"{service_name}.{database_name}.{schema_name}"
     log.info("get_database_schema", fqn=fqn)
@@ -52,9 +48,6 @@ def list_tables(
         service_name: データベースサービス名
         database_name: データベース名
         schema_name: スキーマ名
-
-    Returns:
-        {"tables": [{"fqn": str, "name": str, "description": str, "columns": int}], "success": bool}
     """
     fqn = f"{service_name}.{database_name}.{schema_name}"
     try:
@@ -94,9 +87,6 @@ def register_table_metadata(
         description: テーブルの説明（日本語可）
         tags: タグリスト (例: ["PII", "Customer"])
         owners: オーナーのメールアドレスリスト (例: ["team@example.com"])
-
-    Returns:
-        {"fqn": str, "updated": bool, "success": bool}
     """
     log.info("register_table_metadata", fqn=fqn, tags=tags)
     try:
@@ -130,9 +120,6 @@ def update_column_description(
         column_name: カラム名
         description: カラムの説明
         tags: タグリスト (任意)
-
-    Returns:
-        {"table_fqn": str, "column": str, "updated": bool, "success": bool}
     """
     log.info("update_column_description", table_fqn=table_fqn, column=column_name)
     try:

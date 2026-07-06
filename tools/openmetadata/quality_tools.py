@@ -36,9 +36,6 @@ def create_quality_rule(
             - "columnValuesToMatchRegex": 正規表現チェック (params: {"regex": "..."})
             - "tableRowCountToBeBetween": 行数チェック (params: {"minValue": N, "maxValue": N})
         params: ルールパラメータ (rule_type に応じて異なる)
-
-    Returns:
-        {"ruleName": str, "created": bool, "success": bool}
     """
     log.info("create_quality_rule", table_fqn=table_fqn, column=column_name, rule=rule_type)
     try:
@@ -76,17 +73,6 @@ def get_quality_metrics(table_fqn: str) -> dict:
 
     Args:
         table_fqn: テーブルの完全修飾名
-
-    Returns:
-        {
-          "fqn": str,
-          "totalRules": int,
-          "passedRules": int,
-          "failedRules": int,
-          "notRunRules": int,
-          "rules": [{"name": str, "testDefinition": str, "lastResult": str}],
-          "success": bool
-        }
     """
     log.info("get_quality_metrics", table_fqn=table_fqn)
     try:

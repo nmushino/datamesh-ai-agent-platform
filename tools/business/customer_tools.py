@@ -24,9 +24,6 @@ def register_customer(
         email: メールアドレス
         phone: 電話番号（任意）
         address: 住所（任意）
-
-    Returns:
-        {"customerId": str, "name": str, "registeredAt": str, "success": bool}
     """
     log.info("register_customer", customer_id=customer_id)
     try:
@@ -65,10 +62,6 @@ def search_customers(
         query: 検索クエリ（顧客名・メールアドレス・顧客IDで検索）
         status: ステータスフィルタ ("active", "inactive", "" で全件)
         limit: 最大取得件数
-
-    Returns:
-        {"customers": [{"customerId": str, "name": str, "email": str, "status": str}],
-         "total": int, "success": bool}
     """
     log.info("search_customers", query=query)
     try:
@@ -92,9 +85,6 @@ def get_customer(customer_id: str) -> dict:
 
     Args:
         customer_id: 顧客 ID
-
-    Returns:
-        顧客情報の辞書、または {"error": str, "success": False}
     """
     try:
         client = get_business_api_client()
@@ -127,9 +117,6 @@ def update_customer(
         phone: 新しい電話番号（省略可）
         address: 新しい住所（省略可）
         status: 新しいステータス ("active", "inactive")（省略可）
-
-    Returns:
-        {"customerId": str, "updated": bool, "success": bool}
     """
     log.info("update_customer", customer_id=customer_id)
     try:
