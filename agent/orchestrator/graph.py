@@ -143,7 +143,7 @@ def _continue_if_truncated(llm, messages: list, ai_message: AIMessage, status_q=
 _SITE_KEYWORD_TO_FQN_PART = {"Aサイト": "asite", "Bサイト": "bsite", "Cサイト": "csite"}
 
 
-def _normalize_site_query(tool_name: str, args: dict) -> dict:
+def _normalize_site_query(tool_name: str, args: dict, user_text: str = "") -> dict:
     """search_data_assets の query に「Aサイト」等の日本語がそのまま
     残っている場合、FQN ワイルドカードクエリに強制的に書き換える。
     プロンプトでの指示だけでは徹底されないことがあり(他サイトの複製先
@@ -152,11 +152,30 @@ def _normalize_site_query(tool_name: str, args: dict) -> dict:
     if tool_name != "search_data_assets":
         return args
     query = args.get("query", "")
+    if "fullyQualifiedName:" in query:
+        return args
     for keyword, fqn_part in _SITE_KEYWORD_TO_FQN_PART.items():
-        if keyword in query and "fullyQualifiedName:" not in query:
+        if keyword in query:
             new_args = dict(args)
             new_args["query"] = f"fullyQualifiedName:*{fqn_part}*"
             log.warning("site_query_normalized", original_query=query, new_query=new_args["query"])
+            return new_args
+    # NOTE: サンプルデータ取得のように「まずトピック名だけで検索して FQN を
+    # 特定してから別ツールを呼ぶ」流れでは、モデルが検索クエリ自体には
+    # サイト名を含めないことがある(例: ユーザーが「Aサイトの Order-in
+    # トピック」と言っても query="Order-in" だけを渡す)。この場合、元の
+    # ユーザー発言にサイト指定があれば、そちらを優先してサイト絞り込みの
+    # ワイルドカードクエリに書き換える(元のトピック名指定は捨てて良い。
+    # asset_type と limit 拡大で該当サイトの全件から選ばせる)。
+    for keyword, fqn_part in _SITE_KEYWORD_TO_FQN_PART.items():
+        if keyword in user_text:
+            new_args = dict(args)
+            new_args["query"] = f"fullyQualifiedName:*{fqn_part}*"
+            new_args["limit"] = max(int(args.get("limit", 10)), 20)
+            log.warning(
+                "site_query_normalized_from_context",
+                original_query=query, new_query=new_args["query"], user_text=user_text,
+            )
             return new_args
     return args
 
@@ -172,6 +191,9 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
 
     messages = [SystemMessage(content=system_prompt)] + list(input_messages)
     new_messages: list = []
+    latest_human_text = next(
+        (str(m.content) for m in reversed(input_messages) if isinstance(m, HumanMessage)), ""
+    )
     for _ in range(_MAX_TOOL_ITERATIONS):
         ai_message = llm_with_tools.invoke(messages)
         tool_calls = getattr(ai_message, "tool_calls", None) or []
@@ -188,7 +210,7 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
                     status_q.put(
                         _TOOL_STATUS_LABELS.get(tc["name"], f"{tc['name']} を実行しています...")
                     )
-                tool_args = _normalize_site_query(tc["name"], tc["args"])
+                tool_args = _normalize_site_query(tc["name"], tc["args"], latest_human_text)
                 result = tool_fn.invoke(tool_args)
             else:
                 result = {"error": f"unknown tool: {tc['name']}", "success": False}
