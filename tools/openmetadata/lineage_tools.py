@@ -11,8 +11,9 @@ def get_data_lineage(fqn: str, depth: int = 3) -> dict:
     データリネージ（データの流れ）を取得します。
 
     Args:
-        fqn: 起点となるエンティティの完全修飾名
-             (例: "postgresql-prod.dronedb.public.orders")
+        fqn: 起点となるエンティティの完全修飾名。実在の値が不明な場合は
+             先に search_data_assets で検索して確認すること
+             (例: "external-shop-cluster-postgres-asite:5432.droneshopdb.droneshop.orders")
         depth: リネージの深さ (1-5)。大きいほど広範囲を取得
 
     Returns:

@@ -15,9 +15,11 @@ def get_database_schema(
     OpenMetadata からデータベーススキーマ情報を取得します。
 
     Args:
-        service_name: データベースサービス名 (例: "postgresql-prod")
-        database_name: データベース名 (例: "dronedb")
-        schema_name: スキーマ名 (例: "public")
+        service_name: データベースサービス名。実在の値が不明な場合は先に
+            search_data_assets で検索して確認すること
+            (例: "external-shop-cluster-postgres-asite:5432")
+        database_name: データベース名 (例: "droneshopdb")
+        schema_name: スキーマ名 (例: "droneshop")
 
     Returns:
         スキーマ情報の辞書。テーブル一覧・カラム情報を含む。
@@ -86,7 +88,9 @@ def register_table_metadata(
     テーブルが存在しない場合はエラーを返します。
 
     Args:
-        fqn: テーブルの完全修飾名 (例: "postgresql-prod.dronedb.public.customers")
+        fqn: テーブルの完全修飾名。実在の値が不明な場合は先に
+            search_data_assets で検索して確認すること
+            (例: "external-shop-cluster-postgres-asite:5432.droneshopdb.droneshop.orders")
         description: テーブルの説明（日本語可）
         tags: タグリスト (例: ["PII", "Customer"])
         owners: オーナーのメールアドレスリスト (例: ["team@example.com"])

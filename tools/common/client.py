@@ -126,17 +126,14 @@ class OpenMetadataClientWrapper:
         return updated.dict()
 
     def get_lineage(self, fqn: str, entity_type: str = "table", depth: int = 3) -> dict:
-        from metadata.generated.schema.entity.data.table import Table
-        table = self._client.get_by_name(entity=Table, fqn=fqn)
-        if not table:
-            raise ValueError(f"Entity not found: {fqn}")
-        lineage = self._client.get_lineage_by_id(
-            entity=Table,
-            entity_id=str(table.id.root),
-            up_depth=depth,
-            down_depth=depth,
+        # NOTE: get_by_name() 経由の pydantic SDK モデルはサーバー(1.13.0)との
+        # スキーマ差分で ValidationError になるため、生の REST API を使う。
+        response = self._client.client.get(
+            f"/lineage/{entity_type}/name/{fqn}?upstreamDepth={depth}&downstreamDepth={depth}"
         )
-        return lineage.dict() if lineage else {}
+        if not response or not response.get("entity"):
+            raise ValueError(f"Entity not found: {fqn}")
+        return response
 
     def get_quality_test_cases(self, table_fqn: str, limit: int = 20) -> list[dict]:
         # NOTE: get_table() 経由の pydantic SDK モデルはサーバー(1.13.0)とSDK(1.3.0)の
