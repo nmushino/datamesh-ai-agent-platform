@@ -48,6 +48,14 @@ class OpenMetadataClientWrapper:
         )
         return [t.dict() for t in tables]
 
+    # NOTE: index="all" にはテーブル/トピック/データプロダクトのような実データ資産
+    # 以外に、Kafkaブローカー自体(messagingService)や、データベース接続情報
+    # (databaseService/database/databaseSchema)、品質テスト定義(testCase)なども
+    # 含まれる。これらが limit 件数の枠を消費し、実データ資産(特にテーブル)が
+    # 押し出されて表示されなくなる事象があったため、"all" 検索時はクライアント側で
+    # 除外する。
+    _DATA_ASSET_ENTITY_TYPES = {"table", "topic", "pipeline", "dataProduct"}
+
     def search_assets(self, query: str, asset_type: str = "all", limit: int = 10) -> list[dict]:
         # es_search_from_fqn requires an actual entity class (e.g. Table) since it keys
         # ES_INDEX_MAP by entity_type.__name__, so it can't express a cross-type "all"
@@ -61,19 +69,27 @@ class OpenMetadataClientWrapper:
         }
         index = index_map.get(asset_type, "all")
         q = quote_plus(query) if query else "*"
+        # "all" はブローカー/DB接続情報/テストケース等で埋まりやすいため、
+        # 除外後になお limit 件数を確保できるよう多めに取得してから絞り込む。
+        fetch_size = limit * 4 if index == "all" else limit
         response = self._client.client.get(
-            f"/search/query?q={q}&index={index}&size={limit}&deleted=false"
+            f"/search/query?q={q}&index={index}&size={fetch_size}&deleted=false"
         )
         hits = (response or {}).get("hits", {}).get("hits", [])
-        return [hit.get("_source", {}) for hit in hits]
+        sources = [hit.get("_source", {}) for hit in hits]
+        if index == "all":
+            sources = [s for s in sources if s.get("entityType") in self._DATA_ASSET_ENTITY_TYPES]
+        return sources[:limit]
 
     def get_recent_activity(self, limit: int = 10) -> list[dict]:
         response = self._client.client.get(
-            f"/search/query?q=*&index=all&size={limit}&deleted=false"
+            f"/search/query?q=*&index=all&size={limit * 4}&deleted=false"
             "&sort_field=updatedAt&sort_order=desc"
         )
         hits = (response or {}).get("hits", {}).get("hits", [])
-        return [hit.get("_source", {}) for hit in hits]
+        sources = [hit.get("_source", {}) for hit in hits]
+        sources = [s for s in sources if s.get("entityType") in self._DATA_ASSET_ENTITY_TYPES]
+        return sources[:limit]
 
     def get_owned_assets(self, owner_name: str, limit: int = 10) -> list[dict]:
         # NOTE: owners.name などのフィールド指定クエリはこの ES マッピングでは
@@ -82,17 +98,19 @@ class OpenMetadataClientWrapper:
         # ヒットすることを確認済みのため、こちらを使う。
         q = quote_plus(f"*{owner_name}*")
         response = self._client.client.get(
-            f"/search/query?q={q}&index=all&size={limit}&deleted=false"
+            f"/search/query?q={q}&index=all&size={limit * 4}&deleted=false"
         )
         hits = (response or {}).get("hits", {}).get("hits", [])
-        return [
+        owned = [
             hit.get("_source", {})
             for hit in hits
-            if any(
+            if hit.get("_source", {}).get("entityType") in self._DATA_ASSET_ENTITY_TYPES
+            and any(
                 o.get("name") == owner_name or o.get("displayName") == owner_name
                 for o in (hit.get("_source", {}).get("owners") or [])
             )
         ]
+        return owned[:limit]
 
     def create_or_update_table(self, request: dict) -> dict:
         from metadata.generated.schema.api.data.createTable import CreateTableRequest
