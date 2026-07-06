@@ -37,6 +37,12 @@ _SUBAGENT_CONFIGS = {
 # 呼び出し過程は _recent_messages 側で除外する)だけに絞ること。
 RECENT_MESSAGES_LIMIT = 4
 
+# 過去の「最終回答」自体が大きなMarkdownテーブルであることが多く(一覧系の
+# 依頼が中心のため)、ツール呼び出し過程を除いても複数件残すだけで
+# 肥大化することが確認された。直近1件以外の過去のAIMessageは参考情報
+# として短く切り詰める。
+OLD_ANSWER_MAX_CHARS = 150
+
 
 def _recent_messages(state: AgentState) -> list:
     messages = state["messages"]
@@ -50,7 +56,14 @@ def _recent_messages(state: AgentState) -> list:
         m for m in messages
         if not isinstance(m, ToolMessage) and not (isinstance(m, AIMessage) and getattr(m, "tool_calls", None))
     ]
-    return filtered[-RECENT_MESSAGES_LIMIT:] if len(filtered) > RECENT_MESSAGES_LIMIT else filtered
+    recent = filtered[-RECENT_MESSAGES_LIMIT:] if len(filtered) > RECENT_MESSAGES_LIMIT else filtered
+    trimmed = []
+    for i, m in enumerate(recent):
+        is_last = i == len(recent) - 1
+        if isinstance(m, AIMessage) and not is_last and len(str(m.content)) > OLD_ANSWER_MAX_CHARS:
+            m = AIMessage(content=str(m.content)[:OLD_ANSWER_MAX_CHARS] + "...(省略)")
+        trimmed.append(m)
+    return trimmed
 
 
 # NOTE: config["configurable"] 経由で status キューを渡そうとしたが、
