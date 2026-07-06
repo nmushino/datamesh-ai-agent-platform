@@ -40,9 +40,28 @@ _SUBAGENT_CONFIGS = {
 RECENT_MESSAGES_LIMIT = 6
 
 
+# 過去のツール実行結果を再送信する際の切り詰め上限。現在のターンで新たに
+# 呼び出すツール結果は search_tools 側で300文字に切り詰め済みだが、過去の
+# ターンの結果は会話継続のための参考情報でしかないため、さらに短くしてよい。
+OLD_TOOL_MESSAGE_MAX_CHARS = 200
+
+
 def _recent_messages(state: AgentState) -> list:
     messages = state["messages"]
-    return messages[-RECENT_MESSAGES_LIMIT:] if len(messages) > RECENT_MESSAGES_LIMIT else messages
+    recent = messages[-RECENT_MESSAGES_LIMIT:] if len(messages) > RECENT_MESSAGES_LIMIT else messages
+    # 直近のツール結果(このターンで初めて使う可能性がある最後の1件)は残し、
+    # それより前のToolMessageだけを切り詰めてコンテキストの肥大化を防ぐ。
+    trimmed = []
+    for i, m in enumerate(recent):
+        is_last = i == len(recent) - 1
+        if isinstance(m, ToolMessage) and not is_last and len(str(m.content)) > OLD_TOOL_MESSAGE_MAX_CHARS:
+            m = ToolMessage(
+                content=str(m.content)[:OLD_TOOL_MESSAGE_MAX_CHARS] + "...(省略)",
+                tool_call_id=m.tool_call_id,
+                name=m.name,
+            )
+        trimmed.append(m)
+    return trimmed
 
 
 # NOTE: config["configurable"] 経由で status キューを渡そうとしたが、
