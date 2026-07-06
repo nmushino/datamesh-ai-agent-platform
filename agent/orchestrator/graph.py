@@ -215,14 +215,19 @@ def chitchat_node(state: AgentState) -> dict:
     try:
         llm = get_llm(enable_thinking=enable_thinking, max_tokens=max_tokens)
         ai_message = llm.invoke(messages)
+        ai_message = _continue_if_truncated(llm, messages, ai_message, _status_queue_var.get())
     except Exception as e:
         safe_max = _shrink_max_tokens_for_error(str(e), max_tokens)
         if safe_max is None:
-            raise
-        log.warning("context_length_retry", node="chitchat", safe_max_tokens=safe_max)
-        llm = get_llm(enable_thinking=enable_thinking, max_tokens=safe_max)
-        ai_message = llm.invoke(messages)
-    ai_message = _continue_if_truncated(llm, messages, ai_message, _status_queue_var.get())
+            log.warning("context_length_giveup", node="chitchat", error=str(e))
+            ai_message = AIMessage(
+                content="すみません、応答が長くなりすぎたため生成できませんでした。もう一度お試しください。"
+            )
+        else:
+            log.warning("context_length_retry", node="chitchat", safe_max_tokens=safe_max)
+            llm = get_llm(enable_thinking=enable_thinking, max_tokens=safe_max)
+            ai_message = llm.invoke(messages)
+            ai_message = _continue_if_truncated(llm, messages, ai_message, _status_queue_var.get())
     return {
         "messages": [ai_message],
         "active_agent": "chitchat",
@@ -249,14 +254,20 @@ def _invoke_subagent_ensured(
         except Exception as e:
             safe_max = _shrink_max_tokens_for_error(str(e), current_max_tokens)
             if safe_max is None:
-                raise
+                # NOTE: 縮小してもコンテキスト長に収まらない(メッセージ側だけで
+                # 上限に迫っている)場合、以前はここで即座に例外を再送出し、
+                # 残りのリトライ回数があってもユーザーに生のAPIエラーが
+                # 表示されてしまっていた。ここでは諦めてフォールバック文言を
+                # 返す方を優先する。
+                log.warning("context_length_giveup", node=agent_name, error=str(e))
+                break
             log.warning("context_length_retry", node=agent_name, safe_max_tokens=safe_max)
             current_max_tokens = safe_max
             continue
         if new_messages:
             return new_messages
         log.warning("subagent_empty_reply_retry", attempt=attempt)
-    return [AIMessage(content="すみません、処理中にエラーが発生しました。もう一度お試しください。")]
+    return [AIMessage(content="すみません、応答が長くなりすぎたため生成できませんでした。質問の範囲を絞る(例:サイトや資産タイプを指定する)か、チャット設定の応答の長さを変更してもう一度お試しください。")]
 
 
 def schema_agent_node(state: AgentState) -> dict:
