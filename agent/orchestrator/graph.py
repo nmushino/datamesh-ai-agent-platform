@@ -94,6 +94,20 @@ _TOOL_STATUS_LABELS = {
 
 _MAX_TOOL_ITERATIONS = 5
 
+TRUNCATION_NOTICE = (
+    "\n\n⚠️ 応答が長さ制限(max_tokens)により途中で切れました。"
+    "チャット設定の応答の長さを「中」以上に変更して、もう一度お試しください。"
+)
+
+
+def _mark_if_truncated(ai_message: AIMessage) -> AIMessage:
+    """LLMの応答が max_tokens に達して途中で切れた場合、ユーザーに気づいて
+    もらえるよう通知文を追記する(finish_reason == "length")。"""
+    finish_reason = (ai_message.response_metadata or {}).get("finish_reason")
+    if finish_reason == "length":
+        return AIMessage(content=str(ai_message.content) + TRUNCATION_NOTICE)
+    return ai_message
+
 
 def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, input_messages: list) -> list:
     """ツールバインディングされたLLMで手動のReActループを回す
@@ -108,9 +122,11 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
     new_messages: list = []
     for _ in range(_MAX_TOOL_ITERATIONS):
         ai_message = llm_with_tools.invoke(messages)
+        tool_calls = getattr(ai_message, "tool_calls", None) or []
+        if not tool_calls:
+            ai_message = _mark_if_truncated(ai_message)
         messages.append(ai_message)
         new_messages.append(ai_message)
-        tool_calls = getattr(ai_message, "tool_calls", None) or []
         if not tool_calls:
             break
         for tc in tool_calls:
@@ -182,6 +198,7 @@ def chitchat_node(state: AgentState) -> dict:
         log.warning("context_length_retry", node="chitchat", safe_max_tokens=safe_max)
         llm = get_llm(enable_thinking=enable_thinking, max_tokens=safe_max)
         ai_message = llm.invoke(messages)
+    ai_message = _mark_if_truncated(ai_message)
     return {
         "messages": [ai_message],
         "active_agent": "chitchat",
