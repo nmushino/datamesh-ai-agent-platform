@@ -71,6 +71,29 @@ def get_recent_activity(limit: int = 10) -> dict:
 
 
 @tool
+def get_topic_sample_data(topic_fqn: str, limit: int = 5) -> dict:
+    """
+    Kafkaトピックのサンプルメッセージを取得します（OpenMetadataの
+    トピック詳細ページの「Sample Data」タブと同じ情報）。
+    「Order-inトピックのサンプルを表示して」のような依頼には、まず
+    topic_fqn が不明な場合は search_data_assets で該当トピックを検索して
+    FQN を特定してから、このツールを呼び出すこと。
+
+    Args:
+        topic_fqn: トピックの完全修飾名 (例: "external-shop-cluster-kafka-asite:9094.orders-in")
+        limit: 取得するメッセージ数 (1-20)
+    """
+    log.info("get_topic_sample_data", topic_fqn=topic_fqn)
+    try:
+        client = get_openmetadata_client()
+        messages = client.get_topic_sample_data(topic_fqn, limit)
+        return {"fqn": topic_fqn, "messages": messages, "total": len(messages), "success": True}
+    except Exception as e:
+        log.error("get_topic_sample_data_failed", topic_fqn=topic_fqn, error=str(e))
+        return {"error": f"サンプルデータ取得エラー: {str(e)}", "success": False}
+
+
+@tool
 def get_my_data_assets(owner_name: str, limit: int = 10) -> dict:
     """
     指定したユーザー (オーナー) が所有するデータ資産の一覧を取得します。

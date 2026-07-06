@@ -1,3 +1,4 @@
+import json
 import os
 import httpx
 import structlog
@@ -146,6 +147,22 @@ class OpenMetadataClientWrapper:
             f"?entityLink={entity_link}&fields=testCaseResult&limit={limit}"
         )
         return (response or {}).get("data", [])
+
+    def get_topic_sample_data(self, topic_fqn: str, limit: int = 5) -> list[dict]:
+        # NOTE: sampleData は /topics/name/{fqn} の fields クエリでは返らず、
+        # id ベースの専用サブリソース /topics/{id}/sampleData でのみ取得できる。
+        topic = self._client.client.get(f"/topics/name/{topic_fqn}")
+        if not topic:
+            raise ValueError(f"Topic not found: {topic_fqn}")
+        response = self._client.client.get(f"/topics/{topic['id']}/sampleData")
+        messages = ((response or {}).get("sampleData") or {}).get("messages") or []
+        parsed = []
+        for raw in messages[:limit]:
+            try:
+                parsed.append(json.loads(raw))
+            except (TypeError, ValueError):
+                parsed.append(raw)
+        return parsed
 
     def create_test_case(self, test_case: dict) -> dict:
         from metadata.generated.schema.api.tests.createTestCase import CreateTestCaseRequest

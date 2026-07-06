@@ -82,6 +82,7 @@ _TOOL_STATUS_LABELS = {
     "search_data_assets":     "OpenMetadata でデータ資産を検索しています...",
     "get_recent_activity":    "OpenMetadata の最近の更新をクロールしています...",
     "get_my_data_assets":     "OpenMetadata でオーナー別データを検索しています...",
+    "get_topic_sample_data":  "Kafkaトピックのサンプルデータを取得しています...",
     "get_database_schema":    "テーブルのスキーマ情報を取得しています...",
     "list_tables":            "テーブル一覧を取得しています...",
     "register_table_metadata": "テーブルメタデータを登録しています...",
