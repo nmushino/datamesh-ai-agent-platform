@@ -287,6 +287,19 @@ def _redirect_unfounded_quality_lookup(tool_calls: list, user_text: str) -> list
     return result
 
 
+def _partial_result_notice(new_messages: list) -> str:
+    """コンテキスト長超過で最終応答の生成に失敗した際、それまでに実行できた
+    ツール呼び出しの一覧だけでもユーザーに伝える(完全に空で終わらせない)。"""
+    tool_names = [m.name for m in new_messages if isinstance(m, ToolMessage) and getattr(m, "name", None)]
+    lines = [
+        "⚠️ 応答の生成中にコンテキスト長の上限を超えたため、最後まで完了できませんでした。",
+    ]
+    if tool_names:
+        lines.append("ここまでに実行できた処理: " + "、".join(tool_names))
+    lines.append("質問の範囲を絞る(例:サイトや資産タイプを指定する)か、もう一度お試しください。")
+    return "\n".join(lines)
+
+
 def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, input_messages: list) -> list:
     """ツールバインディングされたLLMで手動のReActループを回す
     (create_react_agentのネストしたグラフ実行は使わない。理由は _SUBAGENT_CONFIGS
@@ -302,7 +315,17 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
         (str(m.content) for m in reversed(input_messages) if isinstance(m, HumanMessage)), ""
     )
     for _ in range(_MAX_TOOL_ITERATIONS):
-        ai_message = llm_with_tools.invoke(messages)
+        try:
+            ai_message = llm_with_tools.invoke(messages)
+        except Exception:
+            # NOTE: このターンで既にツール呼び出し等が進んでいた場合、コンテキスト長
+            # 超過で例外を送出してすべて失うのではなく、ここまでの内容を打ち切り
+            # 通知付きで返す(呼び出し元 _invoke_subagent_ensured の縮小リトライは
+            # まだ一度もツールを呼べていない=new_messages が空の場合のために残す)。
+            if not new_messages:
+                raise
+            new_messages.append(AIMessage(content=_partial_result_notice(new_messages)))
+            return new_messages
         tool_calls = getattr(ai_message, "tool_calls", None) or []
         if not tool_calls:
             ai_message = _continue_if_truncated(llm_with_tools, messages, ai_message, status_q)
