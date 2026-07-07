@@ -134,10 +134,16 @@ export default function App() {
       });
   };
 
-  // 定期チェック実行履歴の項目をクリックすると、その結果を表示する専用の
-  // 新規会話を作成する(既存の会話には混ぜない)。
+  // 定期チェック実行履歴の項目をクリックすると、専用スレッド「定期チェック実行履歴」に
+  // 結果を追記する。スレッドが無ければ作成し、既にあれば再利用して同じスレッドの
+  // 下に続けて記載していく(クリックのたびに新規会話は作らない)。
+  const SCHEDULED_TASK_THREAD_TITLE = "定期チェック実行履歴";
   const handleSelectScheduledTask = (task: ScheduledTask) => {
-    const threadId = createThread();
+    const existing = threads.find((t) => t.title === SCHEDULED_TASK_THREAD_TITLE);
+    const threadId = existing ? existing.id : createThread(SCHEDULED_TASK_THREAD_TITLE);
+    if (existing) {
+      setActiveThreadId(existing.id);
+    }
     setShowQuickActions(false);
     appendMessage(threadId, {
       id: crypto.randomUUID(),

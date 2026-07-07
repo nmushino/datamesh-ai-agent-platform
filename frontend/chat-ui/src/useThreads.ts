@@ -26,11 +26,11 @@ export function useThreads() {
     saveThreads(threads);
   }, [threads]);
 
-  const createThread = useCallback((): string => {
+  const createThread = useCallback((title?: string): string => {
     const now = Date.now();
     const thread: Thread = {
       id: crypto.randomUUID(),
-      title: "新しい会話",
+      title: title ?? "新しい会話",
       messages: [],
       createdAt: now,
       updatedAt: now,
