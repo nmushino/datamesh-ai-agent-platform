@@ -142,6 +142,19 @@ def _continue_if_truncated(llm, messages: list, ai_message: AIMessage, status_q=
 
 _SITE_KEYWORD_TO_FQN_PART = {"Aサイト": "asite", "Bサイト": "bsite", "Cサイト": "csite"}
 
+_NAME_FRAGMENT_RE = re.compile(r"[A-Za-z]{3,}")
+
+
+def _extract_name_fragment(text: str) -> str:
+    """検索クエリ文字列から英字のみの断片を抜き出し、サイト絞り込みと
+    組み合わせるための緩いワイルドカードとして使う(例: "Order-in" -> "order")。
+    元のクエリを完全に捨てて limit を大きくする方式では、該当サイトの
+    全トピックの詳細説明が丸ごとコンテキストに載ってしまいプロンプトが
+    肥大化する(実測: 6706トークンまで増加しコンテキスト長超過を誘発)ため、
+    可能な限りこちらでトピック名まで絞り込む。"""
+    m = _NAME_FRAGMENT_RE.search(text)
+    return m.group(0).lower() if m else ""
+
 
 def _normalize_site_query(tool_name: str, args: dict, user_text: str = "") -> dict:
     """search_data_assets の query に「Aサイト」等の日本語がそのまま
@@ -169,9 +182,14 @@ def _normalize_site_query(tool_name: str, args: dict, user_text: str = "") -> di
     # asset_type と limit 拡大で該当サイトの全件から選ばせる)。
     for keyword, fqn_part in _SITE_KEYWORD_TO_FQN_PART.items():
         if keyword in user_text:
+            fragment = _extract_name_fragment(query)
             new_args = dict(args)
-            new_args["query"] = f"fullyQualifiedName:*{fqn_part}*"
-            new_args["limit"] = max(int(args.get("limit", 10)), 20)
+            new_args["query"] = (
+                f"fullyQualifiedName:*{fqn_part}*{fragment}*" if fragment
+                else f"fullyQualifiedName:*{fqn_part}*"
+            )
+            if not fragment:
+                new_args["limit"] = max(int(args.get("limit", 10)), 20)
             log.warning(
                 "site_query_normalized_from_context",
                 original_query=query, new_query=new_args["query"], user_text=user_text,
