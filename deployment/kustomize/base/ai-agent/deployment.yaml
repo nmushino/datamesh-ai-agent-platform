@@ -46,6 +46,12 @@ spec:
                 configMapKeyRef:
                   name: ai-agent-config
                   key: openmetadata-host
+            - name: OPENMETADATA_PUBLIC_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: ai-agent-config
+                  key: openmetadata-public-url
+                  optional: true
             - name: BUSINESS_API_URL
               valueFrom:
                 configMapKeyRef:
@@ -119,6 +125,9 @@ data:
   # (SDK が内部で /v1/... を付加する)。business-api の Java REST クライアントは
   # 自身のインターフェースに @Path("/api/v1") を持つため、こちらとは扱いが異なる。
   openmetadata-host: "http://openmetadata.openmetadata.svc.cluster.local:8585/api"
+  # ユーザーがブラウザで開ける公開URL(応答にデータソースへのリンクを含めるために使う)。
+  # deploy.sh がRoute作成後に実際のホスト名で上書きする。
+  openmetadata-public-url: ""
   business-api-url: "http://business-api:8080"
   kafka-bootstrap-servers: "kafka-cluster-kafka-bootstrap.quarkusdroneshop-demo.svc.cluster.local:9092"
   # Agentによる定期チェック対象テーブル(カンマ区切りの完全修飾名)。空の場合は定期チェックを無効化する

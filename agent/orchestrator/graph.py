@@ -287,16 +287,26 @@ def _redirect_unfounded_quality_lookup(tool_calls: list, user_text: str) -> list
     return result
 
 
+_PARTIAL_RESULT_MAX_CHARS = 1500
+
+
 def _partial_result_notice(new_messages: list) -> str:
-    """コンテキスト長超過で最終応答の生成に失敗した際、それまでに実行できた
-    ツール呼び出しの一覧だけでもユーザーに伝える(完全に空で終わらせない)。"""
-    tool_names = [m.name for m in new_messages if isinstance(m, ToolMessage) and getattr(m, "name", None)]
+    """コンテキスト長超過で最終応答(自然文でのまとめ)の生成に失敗した際、
+    それまでに取得できていた生データを見せる。LLM呼び出しは例外発生時点で
+    1トークンも返さない同期API呼び出しのため、「部分的に生成された文章」は
+    存在しない。ユーザーが実際に確認したいのは、そこまでに取得できていた
+    データそのものであるため、ツール名の列挙だけでなく実際の結果も含める。"""
+    tool_messages = [m for m in new_messages if isinstance(m, ToolMessage) and getattr(m, "name", None)]
     lines = [
-        "⚠️ 応答の生成中にコンテキスト長の上限を超えたため、最後まで完了できませんでした。",
+        "⚠️ 応答のまとめ生成中にコンテキスト長の上限を超えたため、最後まで完了できませんでした。",
+        "ここまでに取得できていたデータは以下の通りです(まとめ前の生データです):",
     ]
-    if tool_names:
-        lines.append("ここまでに実行できた処理: " + "、".join(tool_names))
-    lines.append("質問の範囲を絞る(例:サイトや資産タイプを指定する)か、もう一度お試しください。")
+    for m in tool_messages:
+        content = str(m.content)
+        if len(content) > _PARTIAL_RESULT_MAX_CHARS:
+            content = content[:_PARTIAL_RESULT_MAX_CHARS] + "...(省略)"
+        lines.append(f"\n**{m.name}**\n```json\n{content}\n```")
+    lines.append("\n質問の範囲を絞る(例:サイトや資産タイプを指定する)か、もう一度お試しください。")
     return "\n".join(lines)
 
 

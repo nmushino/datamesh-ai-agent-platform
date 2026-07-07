@@ -206,7 +206,9 @@ class ScheduledTaskBridge:
                     continue
                 comment = self._extract_class_comment(content_result.get("content", ""))
                 if comment:
-                    return comment, f"出典: {repo_name}/{path}"
+                    org = os.environ.get("GITHUB_ORG", "quarkusdroneshop")
+                    github_url = f"https://github.com/{org}/{repo_name}/blob/main/{path}"
+                    return comment, f"出典: [{repo_name}/{path}]({github_url})"
         except Exception as e:
             log.error("topic_enrichment_failed", topic_name=topic_name, error=str(e))
         return fallback, ""

@@ -341,13 +341,18 @@ if [ -z "$KEYCLOAK_ROUTE_HOST" ]; then
 fi
 if [ -n "$AI_AGENT_ROUTE_HOST" ]; then
   APPS_DOMAIN="${APPS_DOMAIN:-${AI_AGENT_ROUTE_HOST#*.}}"
-  OPENMETADATA_URL="${OPENMETADATA_URL:-http://openmetadata-openmetadata.${APPS_DOMAIN}/my-data}"
+  OPENMETADATA_PUBLIC_BASE_URL="${OPENMETADATA_PUBLIC_BASE_URL:-http://openmetadata-openmetadata.${APPS_DOMAIN}}"
+  OPENMETADATA_URL="${OPENMETADATA_URL:-${OPENMETADATA_PUBLIC_BASE_URL}/my-data}"
   DEVELOPER_HUB_URL="${DEVELOPER_HUB_URL:-https://backstage-developer-hub-quarkusdroneshop-rhdh.${APPS_DOMAIN}}"
   oc set env deployment/chat-ui -n "$NAMESPACE" \
     "API_BASE_URL=https://${AI_AGENT_ROUTE_HOST}" \
     "KEYCLOAK_URL=https://${KEYCLOAK_ROUTE_HOST}" \
     "OPENMETADATA_URL=${OPENMETADATA_URL}" \
     "DEVELOPER_HUB_URL=${DEVELOPER_HUB_URL}" >/dev/null
+  # AI Agent の応答にデータソースへのリンクを含めるため、orchestrator にも
+  # 公開URL(パスなしのベース)を渡す。
+  oc set env deployment/ai-agent-orchestrator -n "$NAMESPACE" \
+    "OPENMETADATA_PUBLIC_URL=${OPENMETADATA_PUBLIC_BASE_URL}" >/dev/null
 fi
 if [ -n "$KEYCLOAK_ROUTE_HOST" ]; then
   # business-api はトークンの iss claim と一致させるため、内部Service URLではなく

@@ -65,6 +65,11 @@ def _to_asset_dict(r: dict, default_type: str, description_max_chars: int) -> di
             ).strftime("%Y-%m-%d %H:%M")
         except (ValueError, TypeError, OSError):
             pass
+    # NOTE: モデルに [名前](url) 形式のリンクを組み立てさせよう(あるいは
+    # 事前に組み立てたリンク文字列をそのまま転記させよう)としたが、何度
+    # 試してもモデルがリンク記法を削除してプレーンテキストに戻してしまう
+    # ことを確認した。そのためリンク化はフロントエンド側(markdown.tsx)で
+    # FQN 列の値から機械的に行う方式に変更し、ここでは行わない。
     return asset
 
 
