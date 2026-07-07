@@ -263,6 +263,30 @@ def _inject_missing_topic_creation(tool_calls: list, prior_messages: list) -> li
     return result
 
 
+# NOTE: 「データ品質を確認して」のようにテーブル名の指定が無い依頼でも、
+# モデルはプロンプト指示に反して "orders" 等のテーブルを勝手に推測して
+# get_quality_metrics を呼んでしまうことが繰り返し確認された。ユーザーの
+# 発言に、要求された table_fqn の実際の識別要素(テーブル名部分)が
+# 一切含まれていない場合、これは推測によるでっち上げと判断し、
+# get_data_quality_overview への呼び出しに差し替える。
+def _redirect_unfounded_quality_lookup(tool_calls: list, user_text: str) -> list:
+    result = []
+    for tc in tool_calls:
+        if tc["name"] == "get_quality_metrics":
+            table_fqn = tc["args"].get("table_fqn", "")
+            table_name = table_fqn.rsplit(".", 1)[-1].lower()
+            if table_name and table_name not in user_text.lower():
+                result.append({
+                    "name": "get_data_quality_overview",
+                    "args": {},
+                    "id": tc["id"],
+                    "type": "tool_call",
+                })
+                continue
+        result.append(tc)
+    return result
+
+
 def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, input_messages: list) -> list:
     """ツールバインディングされたLLMで手動のReActループを回す
     (create_react_agentのネストしたグラフ実行は使わない。理由は _SUBAGENT_CONFIGS
@@ -288,6 +312,7 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
             break
 
         tool_calls = _inject_missing_topic_creation(tool_calls, messages[:-1])
+        tool_calls = _redirect_unfounded_quality_lookup(tool_calls, latest_human_text)
 
         pending_tc = next(
             (tc for tc in tool_calls

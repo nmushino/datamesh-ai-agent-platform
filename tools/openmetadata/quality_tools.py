@@ -65,6 +65,44 @@ def create_quality_rule(
 
 
 @tool
+def get_data_quality_overview() -> dict:
+    """
+    特定のテーブルを指定せず、環境全体のデータ品質サマリを取得します
+    (OpenMetadata の /data-quality ダッシュボード画面と同じ全体集計)。
+    「データ品質を確認して」のようにテーブル名の指定が無い依頼には、
+    FQN を尋ね返す前にまずこのツールを呼び出すこと。
+
+    テストがまだ一度も実行されていない場合、該当ルールは「未実行」であり、
+    これは失敗ではない(0%などの品質スコアを勝手に計算して悪い評価で
+    あるかのように伝えてはならない)。
+    """
+    log.info("get_data_quality_overview")
+    try:
+        client = get_openmetadata_client()
+        test_cases = client.get_all_quality_test_cases()
+        passed = failed = not_run = 0
+        for tc in test_cases:
+            result = tc.get("testCaseResult") or {}
+            status = result.get("testCaseStatus")
+            if status == "Success":
+                passed += 1
+            elif status == "Failed":
+                failed += 1
+            else:
+                not_run += 1
+        return {
+            "totalRules": len(test_cases),
+            "passedRules": passed,
+            "failedRules": failed,
+            "notRunRules": not_run,
+            "success": True,
+        }
+    except Exception as e:
+        log.error("get_data_quality_overview_failed", error=str(e))
+        return {"error": f"データ品質サマリ取得エラー: {str(e)}", "success": False}
+
+
+@tool
 def get_quality_metrics(table_fqn: str) -> dict:
     """
     テーブルのデータ品質テストケース(OpenMetadataのData Quality画面と同じ情報)を

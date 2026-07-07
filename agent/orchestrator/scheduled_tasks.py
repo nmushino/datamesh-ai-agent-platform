@@ -133,7 +133,7 @@ class ScheduledTaskBridge:
         log.error("scheduled_task_broker_check_failed", service_name=service_name, error=str(error))
         try:
             get_notification_bridge().push({
-                "pipeline": "openmetadata_new_topic_check",
+                "pipeline": "kafka_broker_topic_scan",
                 "status": "ERROR",
                 "message": f"[定期チェック] ({service_name}): 実ブローカーへの接続に失敗しました: {error}",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -153,16 +153,20 @@ class ScheduledTaskBridge:
                 "description": description,
             })
         except Exception as e:
-            self._emit(self._make_topic_record(fqn, "error", f"自動登録に失敗しました: {e}"))
+            self._emit(self._make_topic_record(
+                fqn, "error", f"自動登録に失敗しました: {e}", task_name="kafka_broker_topic_scan",
+            ))
             return
 
         if result.get("success"):
             message = f"実ブローカーで新規トピックを検知し、OpenMetadataへ自動登録しました: {fqn}"
             if source_note:
                 message += f" ({source_note})"
-            self._emit(self._make_topic_record(fqn, "changed", message))
+            self._emit(self._make_topic_record(fqn, "changed", message, task_name="kafka_broker_topic_scan"))
         else:
-            self._emit(self._make_topic_record(fqn, "error", f"自動登録に失敗しました: {result.get('error')}"))
+            self._emit(self._make_topic_record(
+                fqn, "error", f"自動登録に失敗しました: {result.get('error')}", task_name="kafka_broker_topic_scan",
+            ))
 
     def _enrich_topic_description(self, topic_name: str) -> tuple[str, str]:
         """GitHub organization 内のソースコードから、トピック名に対応する
@@ -178,6 +182,7 @@ class ScheduledTaskBridge:
                 "(GitHub)", "ok",
                 f"ソースコードからのメタ情報推定のため GitHub organization "
                 f"'{os.environ.get('GITHUB_ORG', 'quarkusdroneshop')}' に接続します(読み取りのみ)",
+                task_name="kafka_broker_topic_scan",
             ))
         if not os.environ.get("GITHUB_TOKEN"):
             return fallback, ""
@@ -250,10 +255,13 @@ class ScheduledTaskBridge:
         for fqn in sorted(new_fqns):
             self._emit(self._make_topic_record(fqn, "changed", f"新しいトピックを検知: {fqn}"))
 
-    def _make_topic_record(self, fqn: str, status: str, message: str) -> dict:
+    def _make_topic_record(
+        self, fqn: str, status: str, message: str,
+        task_name: str = "openmetadata_topic_registry_check",
+    ) -> dict:
         return {
             "id": str(uuid.uuid4()),
-            "task_name": "openmetadata_new_topic_check",
+            "task_name": task_name,
             "fqn": fqn,
             "status": status,
             "message": message,

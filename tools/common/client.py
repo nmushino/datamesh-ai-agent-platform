@@ -164,6 +164,16 @@ class OpenMetadataClientWrapper:
         )
         return (response or {}).get("data", [])
 
+    def get_all_quality_test_cases(self, limit: int = 200) -> list[dict]:
+        # NOTE: /data-quality 画面のトップレベルサマリ(特定テーブルを指定しない
+        # 全体集計)に相当するデータを返す。dataQuality/testSuites/executionSummary
+        # は(未実行テストしかない状態では)全て0を返すため使えず、代わりに
+        # 全テストケースを取得して自前で集計する。
+        response = self._client.client.get(
+            f"/dataQuality/testCases?fields=testCaseResult&limit={limit}"
+        )
+        return (response or {}).get("data", [])
+
     def get_topic_sample_data(self, topic_fqn: str, limit: int = 5) -> list[dict]:
         # NOTE: sampleData は /topics/name/{fqn} の fields クエリでは返らず、
         # id ベースの専用サブリソース /topics/{id}/sampleData でのみ取得できる。
