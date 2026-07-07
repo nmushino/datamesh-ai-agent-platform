@@ -5,6 +5,14 @@ interface Props {
   onClose: () => void;
 }
 
+// バックエンドは UTC の ISO 文字列 (例: "2026-07-07T09:18:04+00:00") を
+// そのまま返すため、表示時にブラウザのローカルタイムゾーン(JST)に変換する。
+function formatTimestamp(timestamp: string): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return timestamp;
+  return date.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
+}
+
 export function NotificationPanel({ notifications, onClose }: Props) {
   return (
     <div className="notification-panel">
@@ -37,7 +45,7 @@ export function NotificationPanel({ notifications, onClose }: Props) {
                   {n.message}
                 </div>
                 {n.timestamp && (
-                  <div className="notification-timestamp">{n.timestamp}</div>
+                  <div className="notification-timestamp">{formatTimestamp(n.timestamp)}</div>
                 )}
               </li>
             );

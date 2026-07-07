@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ChatMessage } from "../types";
 import { renderMarkdown } from "../markdown";
 import { CopyIcon, CheckIcon } from "./MessageIcons";
@@ -14,7 +14,12 @@ function formatTokens(n: number): string {
 }
 
 const TYPE_SPEED_MS = 18;
-const COLLAPSE_LINE_THRESHOLD = 30;
+// 30行分の目安の高さ (font-size 14px * line-height 1.5 * 30行 + 上下padding)。
+// Markdownテーブルは1行(生テキストの改行数)がセル内容の折り返しにより
+// 見た目には何行分もの高さになることがあり、生テキストの改行数だけを
+// 数える方式では「表なのに30行判定されない」問題があった。実際に
+// レンダリングされた高さを測定する方式に変更する。
+const COLLAPSE_MAX_HEIGHT_PX = 14 * 1.5 * 30 + 20;
 
 // AIの回答を一文字ずつ表示するタイプライター演出。
 // animateは初回マウント時の値だけを使う(以後の再レンダーで再生し直さないため)。
@@ -26,6 +31,8 @@ export function AssistantBubble({ message, animate, onApprove }: Props) {
   const [shown, setShown] = useState(animate ? "" : content);
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [needsCollapse, setNeedsCollapse] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!animate) return;
@@ -42,12 +49,19 @@ export function AssistantBubble({ message, animate, onApprove }: Props) {
   }, []);
 
   const isTyping = shown.length < content.length;
-  const lineCount = content.split("\n").length;
-  const needsCollapse = lineCount > COLLAPSE_LINE_THRESHOLD;
-  const collapsedContent =
-    needsCollapse && !expanded
-      ? content.split("\n").slice(0, COLLAPSE_LINE_THRESHOLD).join("\n")
-      : content;
+
+  // 実際にレンダリングされた高さを測定して折りたたみが必要か判定する。
+  // 常に全文をDOMに描画しておき、折りたたみ時は CSS の max-height で
+  // 見た目の高さだけを制限する(生テキストの改行数に依存しないため)。
+  useLayoutEffect(() => {
+    if (isTyping) return;
+    const el = contentRef.current;
+    if (!el) return;
+    const prevMaxHeight = el.style.maxHeight;
+    el.style.maxHeight = "none";
+    setNeedsCollapse(el.scrollHeight > COLLAPSE_MAX_HEIGHT_PX);
+    el.style.maxHeight = prevMaxHeight;
+  }, [isTyping, content]);
 
   const handleCopy = async () => {
     try {
@@ -61,8 +75,16 @@ export function AssistantBubble({ message, animate, onApprove }: Props) {
 
   return (
     <div>
-      <div className="chat-message-bubble">
-        {isTyping ? shown : renderMarkdown(collapsedContent)}
+      <div
+        className="chat-message-bubble"
+        ref={contentRef}
+        style={
+          !isTyping && needsCollapse && !expanded
+            ? { maxHeight: COLLAPSE_MAX_HEIGHT_PX, overflow: "hidden" }
+            : undefined
+        }
+      >
+        {isTyping ? shown : renderMarkdown(content)}
       </div>
       {!isTyping && needsCollapse && (
         <button
