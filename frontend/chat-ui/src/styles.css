@@ -646,11 +646,15 @@ body,
   background: #f2f3f5;
 }
 
-.chat-markdown-table {
+.chat-markdown-table-wrapper {
   margin: 8px 0;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.chat-markdown-table {
   border-collapse: collapse;
   font-size: 13px;
-  max-width: 100%;
 }
 
 .chat-markdown-table th,

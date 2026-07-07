@@ -46,24 +46,26 @@ export function renderMarkdown(content: string): ReactNode[] {
       }
       const key = `table-${blockKey++}`;
       blocks.push(
-        <table className="chat-markdown-table" key={key}>
-          <thead>
-            <tr>
-              {headerCells.map((c, ci) => (
-                <th key={`${key}-h${ci}`}>{renderInline(c, `${key}-h${ci}`)}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, ri) => (
-              <tr key={`${key}-r${ri}`}>
-                {r.map((c, ci) => (
-                  <td key={`${key}-r${ri}-c${ci}`}>{renderInline(c, `${key}-r${ri}-c${ci}`)}</td>
+        <div className="chat-markdown-table-wrapper" key={key}>
+          <table className="chat-markdown-table">
+            <thead>
+              <tr>
+                {headerCells.map((c, ci) => (
+                  <th key={`${key}-h${ci}`}>{renderInline(c, `${key}-h${ci}`)}</th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((r, ri) => (
+                <tr key={`${key}-r${ri}`}>
+                  {r.map((c, ci) => (
+                    <td key={`${key}-r${ri}-c${ci}`}>{renderInline(c, `${key}-r${ri}-c${ci}`)}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       );
       i = j;
       continue;
