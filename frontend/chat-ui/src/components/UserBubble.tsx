@@ -5,23 +5,25 @@ import { CopyIcon, CheckIcon, RedoIcon, EyeIcon } from "./MessageIcons";
 interface Props {
   message: ChatMessage;
   onResend?: () => void;
+  collapseLines?: number;
 }
 
-const COLLAPSE_LINE_THRESHOLD = 15;
+const DEFAULT_COLLAPSE_LINE_THRESHOLD = 15;
 
 // ユーザー送信メッセージ側の表示。長文の折りたたみ・コピー・再送信ボタンを
 // AssistantBubble と揃えて提供する (アシスタント側にしか無かったものを
 // 送信側にも付けてほしいという要望に対応)。
-export function UserBubble({ message, onResend }: Props) {
+export function UserBubble({ message, onResend, collapseLines }: Props) {
   const content = message.content ?? "";
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const threshold = collapseLines ?? DEFAULT_COLLAPSE_LINE_THRESHOLD;
   const lineCount = content.split("\n").length;
-  const needsCollapse = lineCount > COLLAPSE_LINE_THRESHOLD;
+  const needsCollapse = lineCount > threshold;
   const shownContent =
     needsCollapse && !expanded
-      ? content.split("\n").slice(0, COLLAPSE_LINE_THRESHOLD).join("\n")
+      ? content.split("\n").slice(0, threshold).join("\n")
       : content;
 
   const handleCopy = async () => {

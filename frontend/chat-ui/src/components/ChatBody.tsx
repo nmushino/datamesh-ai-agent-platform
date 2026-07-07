@@ -15,6 +15,8 @@ interface Props {
   onApprove?: (messageId: string) => void;
   chatSettings: ChatSettings;
   onChatSettingsChange: (settings: ChatSettings) => void;
+  userMessageCollapseLines?: number;
+  assistantMessageCollapseLines?: number;
 }
 
 // line-height 1.4 * font-size 14px * 3行 + 上下padding(10px*2)
@@ -41,6 +43,8 @@ export function ChatBody({
   onApprove,
   chatSettings,
   onChatSettingsChange,
+  userMessageCollapseLines,
+  assistantMessageCollapseLines,
 }: Props) {
   const [input, setInput] = useState("");
   const [expanded, setExpanded] = useState(false);
@@ -142,9 +146,14 @@ export function ChatBody({
                 message={m}
                 animate={!seenIdsRef.current.has(m.id)}
                 onApprove={onApprove ? () => onApprove(m.id) : undefined}
+                collapseLines={assistantMessageCollapseLines}
               />
             ) : (
-              <UserBubble message={m} onResend={() => setInput(m.content)} />
+              <UserBubble
+                message={m}
+                onResend={() => setInput(m.content)}
+                collapseLines={userMessageCollapseLines}
+              />
             )}
             {m.role === "assistant" && m.errorReason && (
               <div className="chat-message-error-reason">{m.errorReason}</div>

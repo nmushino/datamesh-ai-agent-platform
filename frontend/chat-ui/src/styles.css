@@ -961,3 +961,126 @@ body,
   background: #ccc;
   cursor: not-allowed;
 }
+
+/* ===== Settings ===== */
+.sidebar-settings-button {
+  padding: 10px 12px;
+  background: none;
+  color: #444;
+  border: 1px solid #e2e4e8;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 10px;
+}
+
+.sidebar-settings-button:hover {
+  background: #f2f3f5;
+}
+
+.settings-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.settings-modal {
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+  padding: 20px;
+}
+
+.settings-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.settings-modal-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.settings-modal-close {
+  background: none;
+  border: none;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  color: #666;
+}
+
+.settings-modal-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid #e2e4e8;
+  margin-bottom: 16px;
+}
+
+.settings-modal-tab {
+  padding: 8px 14px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font-size: 14px;
+  font-weight: 600;
+  color: #666;
+  cursor: pointer;
+}
+
+.settings-modal-tab-active {
+  color: #4457e6;
+  border-bottom-color: #4457e6;
+}
+
+.settings-modal-body h3 {
+  font-size: 13px;
+  color: #666;
+  margin: 16px 0 8px;
+}
+
+.settings-modal-body h3:first-child {
+  margin-top: 0;
+}
+
+.settings-modal-error {
+  color: #c0392b;
+  font-size: 12px;
+}
+
+.settings-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+.settings-field input {
+  width: 110px;
+  padding: 4px 8px;
+  border: 1px solid #d7d9de;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.settings-modal-level-group {
+  display: flex;
+  gap: 4px;
+  padding: 2px;
+  background: #f2f3f5;
+  border-radius: 12px;
+  width: fit-content;
+}

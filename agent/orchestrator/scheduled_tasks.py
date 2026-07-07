@@ -9,16 +9,19 @@ from datetime import datetime, timezone
 import structlog
 
 from tools.common.client import get_openmetadata_client
+from tools.common.settings_store import get_settings_store
 from tools.kafka.admin_tools import _SITE_BOOTSTRAP_SERVERS
 
 log = structlog.get_logger()
 
 _RECENT_MAXLEN = 50
 
+# デフォルト値(設定ストアに保存された値が優先される)。
 # 実ブローカーへの接続に連続で失敗した場合、以降は毎回(10分おき)ではなく
 # 1時間おきにしかリトライしない(無駄な接続試行・ログ・通知を抑える)。
-_BROKER_BACKOFF_FAILURE_THRESHOLD = 5
-_BROKER_BACKOFF_INTERVAL_SECONDS = 3600
+_DEFAULT_INTERVAL_SECONDS = 600
+_DEFAULT_BACKOFF_FAILURE_THRESHOLD = 5
+_DEFAULT_BACKOFF_INTERVAL_SECONDS = 3600
 
 
 class ScheduledTaskBridge:
@@ -30,7 +33,6 @@ class ScheduledTaskBridge:
 
     def __init__(self, table_fqns: list[str], interval_seconds: int):
         self._table_fqns = table_fqns
-        self._interval_seconds = interval_seconds
         self._recent: deque[dict] = deque(maxlen=_RECENT_MAXLEN)
         self._subscribers: set[asyncio.Queue] = set()
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -46,6 +48,48 @@ class ScheduledTaskBridge:
         self._broker_last_checked: dict[str, float] = {}
         # GitHub organization への接続を初回利用時に一度だけ履歴パネルへ通知する
         self._github_notified = False
+
+        # 設定画面から変更可能な値。設定ストアに保存された値があればそれを使う。
+        store = get_settings_store()
+        self._interval_seconds = int(
+            (store.get("scheduled_task_interval_seconds") if store else None) or interval_seconds
+        )
+        self._backoff_failure_threshold = int(
+            (store.get("scheduled_task_backoff_failure_threshold") if store else None)
+            or _DEFAULT_BACKOFF_FAILURE_THRESHOLD
+        )
+        self._backoff_interval_seconds = int(
+            (store.get("scheduled_task_backoff_interval_seconds") if store else None)
+            or _DEFAULT_BACKOFF_INTERVAL_SECONDS
+        )
+
+    def get_settings(self) -> dict:
+        return {
+            "interval_seconds": self._interval_seconds,
+            "backoff_failure_threshold": self._backoff_failure_threshold,
+            "backoff_interval_seconds": self._backoff_interval_seconds,
+        }
+
+    def update_settings(
+        self,
+        interval_seconds: int | None = None,
+        backoff_failure_threshold: int | None = None,
+        backoff_interval_seconds: int | None = None,
+    ) -> dict:
+        store = get_settings_store()
+        if interval_seconds is not None:
+            self._interval_seconds = interval_seconds
+            if store:
+                store.set("scheduled_task_interval_seconds", str(interval_seconds))
+        if backoff_failure_threshold is not None:
+            self._backoff_failure_threshold = backoff_failure_threshold
+            if store:
+                store.set("scheduled_task_backoff_failure_threshold", str(backoff_failure_threshold))
+        if backoff_interval_seconds is not None:
+            self._backoff_interval_seconds = backoff_interval_seconds
+            if store:
+                store.set("scheduled_task_backoff_interval_seconds", str(backoff_interval_seconds))
+        return self.get_settings()
 
     def start(self, loop: asyncio.AbstractEventLoop) -> None:
         # NOTE: テーブルチェック対象(SCHEDULED_TASK_TABLES)が未設定でも、
@@ -98,11 +142,11 @@ class ScheduledTaskBridge:
             failures = self._broker_failure_counts.get(service_name, 0)
             last_checked = self._broker_last_checked.get(service_name)
             if (
-                failures >= _BROKER_BACKOFF_FAILURE_THRESHOLD
+                failures >= self._backoff_failure_threshold
                 and last_checked is not None
-                and (now - last_checked) < _BROKER_BACKOFF_INTERVAL_SECONDS
+                and (now - last_checked) < self._backoff_interval_seconds
             ):
-                continue  # バックオフ中(1時間経過するまで再試行しない)
+                continue  # バックオフ中(設定した間隔が経過するまで再試行しない)
 
             self._broker_last_checked[service_name] = now
             try:

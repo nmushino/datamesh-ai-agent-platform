@@ -4,17 +4,15 @@ import { Header } from "./components/Header";
 import { Sidebar } from "./components/Sidebar";
 import { ChatBody } from "./components/ChatBody";
 import { Footer } from "./components/Footer";
+import { SettingsModal } from "./components/SettingsModal";
 import { useThreads } from "./useThreads";
 import { useScheduledTasks } from "./useScheduledTasks";
 import { useNotifications } from "./useNotifications";
+import { useAppSettings } from "./useAppSettings";
 import { sendChatMessage, approveTask } from "./api";
 import type { ChatSettings, ScheduledTask } from "./types";
 
 const SIDEBAR_DEFAULT_WIDTH = 300;
-const DEFAULT_CHAT_SETTINGS: ChatSettings = {
-  enableThinking: false,
-  maxTokensLevel: "low",
-};
 
 export default function App() {
   const auth = useAppAuth();
@@ -31,12 +29,17 @@ export default function App() {
   const { tasks: scheduledTasks, deleteTask: deleteScheduledTask } = useScheduledTasks();
   const { notifications, unreadCount, markAllRead, addLocalNotification } =
     useNotifications();
+  const { appSettings, updateAppSettings } = useAppSettings();
   const [sending, setSending] = useState(false);
   const [statusText, setStatusText] = useState<string | null>(null);
   const [showQuickActions, setShowQuickActions] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH);
-  const [chatSettings, setChatSettings] = useState<ChatSettings>(DEFAULT_CHAT_SETTINGS);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [chatSettings, setChatSettings] = useState<ChatSettings>({
+    enableThinking: appSettings.defaultEnableThinking,
+    maxTokensLevel: appSettings.defaultMaxTokensLevel,
+  });
 
   // 未ログインなら自動でKeycloakのログイン画面へリダイレクトする
   useEffect(() => {
@@ -198,6 +201,7 @@ export default function App() {
           scheduledTasks={scheduledTasks}
           onDeleteScheduledTask={deleteScheduledTask}
           onSelectScheduledTask={handleSelectScheduledTask}
+          onOpenSettings={() => setSettingsOpen(true)}
         />
         <ChatBody
           thread={activeThread}
@@ -210,9 +214,17 @@ export default function App() {
           }
           chatSettings={chatSettings}
           onChatSettingsChange={setChatSettings}
+          userMessageCollapseLines={appSettings.userMessageCollapseLines}
+          assistantMessageCollapseLines={appSettings.assistantMessageCollapseLines}
         />
       </div>
       <Footer />
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        appSettings={appSettings}
+        onChangeAppSettings={updateAppSettings}
+      />
     </div>
   );
 }

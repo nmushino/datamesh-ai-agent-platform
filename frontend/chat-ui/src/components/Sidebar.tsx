@@ -14,6 +14,7 @@ interface Props {
   scheduledTasks: ScheduledTask[];
   onDeleteScheduledTask: (id: string) => void;
   onSelectScheduledTask: (task: ScheduledTask) => void;
+  onOpenSettings: () => void;
 }
 
 const MIN_WIDTH = 180;
@@ -48,6 +49,7 @@ export function Sidebar({
   scheduledTasks,
   onDeleteScheduledTask,
   onSelectScheduledTask,
+  onOpenSettings,
 }: Props) {
   const draggingRef = useRef(false);
 
@@ -123,6 +125,13 @@ export function Sidebar({
             <li className="thread-empty">会話履歴はまだありません</li>
           )}
         </ul>
+        <button
+          type="button"
+          className="sidebar-settings-button"
+          onClick={onOpenSettings}
+        >
+          ⚙ 設定
+        </button>
       </div>
       {open && (
         <div

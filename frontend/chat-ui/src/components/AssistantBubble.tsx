@@ -7,6 +7,7 @@ interface Props {
   message: ChatMessage;
   animate: boolean;
   onApprove?: () => void;
+  collapseLines?: number;
 }
 
 function formatTokens(n: number): string {
@@ -14,16 +15,20 @@ function formatTokens(n: number): string {
 }
 
 const TYPE_SPEED_MS = 18;
-// 30行分の目安の高さ (font-size 14px * line-height 1.5 * 30行 + 上下padding)。
+const DEFAULT_COLLAPSE_LINES = 30;
+// N行分の目安の高さ (font-size 14px * line-height 1.5 * N行 + 上下padding)。
 // Markdownテーブルは1行(生テキストの改行数)がセル内容の折り返しにより
 // 見た目には何行分もの高さになることがあり、生テキストの改行数だけを
-// 数える方式では「表なのに30行判定されない」問題があった。実際に
+// 数える方式では「表なのに規定行数と判定されない」問題があった。実際に
 // レンダリングされた高さを測定する方式に変更する。
-const COLLAPSE_MAX_HEIGHT_PX = 14 * 1.5 * 30 + 20;
+function collapseMaxHeightPx(lines: number): number {
+  return 14 * 1.5 * lines + 20;
+}
 
 // AIの回答を一文字ずつ表示するタイプライター演出。
 // animateは初回マウント時の値だけを使う(以後の再レンダーで再生し直さないため)。
-export function AssistantBubble({ message, animate, onApprove }: Props) {
+export function AssistantBubble({ message, animate, onApprove, collapseLines }: Props) {
+  const collapseMaxHeight = collapseMaxHeightPx(collapseLines ?? DEFAULT_COLLAPSE_LINES);
   // NOTE: 過去に localStorage へ保存された旧スキーマのメッセージに content が
   // 欠けているケースがあり、そのまま .length へアクセスするとアプリ全体が
   // クラッシュする (真っ白画面) ため、必ず空文字にフォールバックする。
@@ -59,9 +64,9 @@ export function AssistantBubble({ message, animate, onApprove }: Props) {
     if (!el) return;
     const prevMaxHeight = el.style.maxHeight;
     el.style.maxHeight = "none";
-    setNeedsCollapse(el.scrollHeight > COLLAPSE_MAX_HEIGHT_PX);
+    setNeedsCollapse(el.scrollHeight > collapseMaxHeight);
     el.style.maxHeight = prevMaxHeight;
-  }, [isTyping, content]);
+  }, [isTyping, content, collapseMaxHeight]);
 
   const handleCopy = async () => {
     try {
@@ -80,7 +85,7 @@ export function AssistantBubble({ message, animate, onApprove }: Props) {
         ref={contentRef}
         style={
           !isTyping && needsCollapse && !expanded
-            ? { maxHeight: COLLAPSE_MAX_HEIGHT_PX, overflow: "hidden" }
+            ? { maxHeight: collapseMaxHeight, overflow: "hidden" }
             : undefined
         }
       >

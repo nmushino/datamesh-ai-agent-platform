@@ -1,4 +1,10 @@
-import type { ChatResponse, ChatSettings, Notification, ScheduledTask } from "./types";
+import type {
+  ChatResponse,
+  ChatSettings,
+  Notification,
+  ScheduledTask,
+  ScheduledTaskSettings,
+} from "./types";
 
 function apiBaseUrl(): string {
   return window.__APP_CONFIG__?.apiBaseUrl ?? "";
@@ -128,4 +134,26 @@ export function subscribeToScheduledTasks(
     }
   };
   return () => source.close();
+}
+
+export async function fetchScheduledTaskSettings(): Promise<ScheduledTaskSettings | null> {
+  const res = await fetch(`${apiBaseUrl()}/api/v1/settings/scheduled-task`);
+  if (!res.ok) {
+    return null;
+  }
+  return res.json();
+}
+
+export async function updateScheduledTaskSettings(
+  patch: Partial<ScheduledTaskSettings>
+): Promise<ScheduledTaskSettings> {
+  const res = await fetch(`${apiBaseUrl()}/api/v1/settings/scheduled-task`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    throw new Error(`settings update failed: ${res.status}`);
+  }
+  return res.json();
 }

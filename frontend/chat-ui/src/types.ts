@@ -25,6 +25,21 @@ export interface ChatSettings {
   maxTokensLevel: MaxTokensLevel;
 }
 
+// ブラウザに保存する表示関連の共通設定(折りたたみ行数・トークン/Thinkingの標準値)。
+export interface AppDisplaySettings {
+  userMessageCollapseLines: number;
+  assistantMessageCollapseLines: number;
+  defaultMaxTokensLevel: MaxTokensLevel;
+  defaultEnableThinking: boolean;
+}
+
+// バックエンドの定期チェックスレッドを制御する、全ユーザー共通の設定。
+export interface ScheduledTaskSettings {
+  interval_seconds: number;
+  backoff_failure_threshold: number;
+  backoff_interval_seconds: number;
+}
+
 export interface ChatResponse {
   thread_id: string;
   reply: string;
