@@ -1,6 +1,7 @@
 import asyncio
 import os
 import threading
+import time
 import uuid
 from collections import deque
 from datetime import datetime, timezone
@@ -13,6 +14,11 @@ from tools.kafka.admin_tools import _SITE_BOOTSTRAP_SERVERS
 log = structlog.get_logger()
 
 _RECENT_MAXLEN = 50
+
+# 実ブローカーへの接続に連続で失敗した場合、以降は毎回(10分おき)ではなく
+# 1時間おきにしかリトライしない(無駄な接続試行・ログ・通知を抑える)。
+_BROKER_BACKOFF_FAILURE_THRESHOLD = 5
+_BROKER_BACKOFF_INTERVAL_SECONDS = 3600
 
 
 class ScheduledTaskBridge:
@@ -35,6 +41,9 @@ class ScheduledTaskBridge:
         # 新規トピック検知用。None は起動直後で未初期化(この回では通知せず
         # 既存トピックをベースラインとして記録するだけにする)。
         self._known_topic_fqns: set[str] | None = None
+        # サイトごとの実ブローカー接続の連続失敗回数とバックオフ用の最終チェック時刻
+        self._broker_failure_counts: dict[str, int] = {}
+        self._broker_last_checked: dict[str, float] = {}
 
     def start(self, loop: asyncio.AbstractEventLoop) -> None:
         # NOTE: テーブルチェック対象(SCHEDULED_TASK_TABLES)が未設定でも、
@@ -82,7 +91,18 @@ class ScheduledTaskBridge:
             log.error("scheduled_task_broker_check_om_fetch_failed", error=str(e))
             return
 
+        now = time.monotonic()
         for service_name, bootstrap in _SITE_BOOTSTRAP_SERVERS.items():
+            failures = self._broker_failure_counts.get(service_name, 0)
+            last_checked = self._broker_last_checked.get(service_name)
+            if (
+                failures >= _BROKER_BACKOFF_FAILURE_THRESHOLD
+                and last_checked is not None
+                and (now - last_checked) < _BROKER_BACKOFF_INTERVAL_SECONDS
+            ):
+                continue  # バックオフ中(1時間経過するまで再試行しない)
+
+            self._broker_last_checked[service_name] = now
             try:
                 admin = KafkaAdminClient(
                     bootstrap_servers=bootstrap, client_id="ai-agent-scheduled-check", request_timeout_ms=8000,
@@ -92,16 +112,32 @@ class ScheduledTaskBridge:
                 finally:
                     admin.close()
             except Exception as e:
-                self._emit(self._make_topic_record(
-                    f"({service_name})", "error", f"実ブローカーへの接続に失敗しました: {e}",
-                ))
+                self._broker_failure_counts[service_name] = failures + 1
+                self._notify_broker_connection_error(service_name, e)
                 continue
 
+            self._broker_failure_counts[service_name] = 0
             for topic_name in sorted(broker_topic_names):
                 fqn = f"{service_name}.{topic_name}"
                 if fqn in om_fqns:
                     continue
                 self._register_discovered_topic(service_name, topic_name, fqn)
+
+    def _notify_broker_connection_error(self, service_name: str, error: Exception) -> None:
+        """実ブローカーへの接続エラーは頻発しがち(Skupperリンク切断時など)で、
+        定期チェック実行履歴パネルに出すとノイズになるため通知ベルのみに出す
+        (履歴パネル用の _recent には追加しない)。"""
+        from agent.orchestrator.notifications import get_bridge as get_notification_bridge
+        log.error("scheduled_task_broker_check_failed", service_name=service_name, error=str(error))
+        try:
+            get_notification_bridge().push({
+                "pipeline": "openmetadata_new_topic_check",
+                "status": "ERROR",
+                "message": f"[定期チェック] ({service_name}): 実ブローカーへの接続に失敗しました: {error}",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception as e:
+            log.error("scheduled_task_notify_error_failed", error=str(e))
 
     def _register_discovered_topic(self, service_name: str, topic_name: str, fqn: str) -> None:
         from tools.openmetadata.schema_tools import register_topic_metadata
