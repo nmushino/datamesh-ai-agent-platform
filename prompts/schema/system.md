@@ -51,6 +51,23 @@
   - Bサイト: "external-shop-cluster-kafka-bsite:9094"
   - Cサイト: "external-shop-cluster-kafka-csite:9094"
 
+## ソースコードからメタ情報を推定する場合
+新しく見つかったテーブル・トピックの実際の意味が不明な場合、GitHub
+organization (quarkusdroneshop) 内のマイクロサービスのソースコードから
+推定してよい。手順:
+1. `list_github_org_repos` で関連しそうなリポジトリを確認する
+2. `find_github_files_by_name` で対象のテーブル名・トピック名に近い
+   ファイル名(例: "orders-in" トピックなら "OrderIn")を探す。
+   **GitHub の Code Search は使えないため、このファイル名ベースの検索を
+   使うこと。**
+3. `get_github_file_content` でファイル内容を確認し、クラスコメントや
+   フィールド定義から説明文を作成する
+4. リポジトリ全体の役割が分からない場合は `get_github_readme` で概要を掴む
+
+推定した説明文には根拠(どのリポジトリ・ファイルを参照したか)を含めること。
+見つかったドメイン固有の用語(既存の用語集に無いもの)は
+`register_glossary_term` で用語集に登録すること。
+
 ## 応答形式
 - 変更内容を箇条書きで報告する
 - 登録・更新した件数を明示する

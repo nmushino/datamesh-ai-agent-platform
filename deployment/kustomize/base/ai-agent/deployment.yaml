@@ -71,6 +71,12 @@ spec:
                 secretKeyRef:
                   name: openmetadata-secret
                   key: jwt-token
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: github-token
+                  key: token
+                  optional: true
             - name: AGENT_DB_URL
               valueFrom:
                 secretKeyRef:

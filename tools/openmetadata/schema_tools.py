@@ -149,6 +149,37 @@ def register_topic_metadata(
 
 
 @tool
+def register_glossary_term(
+    term_name: str,
+    description: str,
+    glossary_name: str = "QuarkusDroneShopGlossary",
+) -> dict:
+    """
+    新しいビジネス用語を OpenMetadata の用語集(Glossary)に登録します。
+    新しいテーブル・トピックの調査中に、既存の用語集に無いドメイン固有の
+    用語(例: 新しい業務イベント名)が見つかった場合に使う。
+
+    Args:
+        term_name: 用語名 (例: "OrderInEvent")
+        description: 用語の説明（日本語可）
+        glossary_name: 登録先の用語集名 (デフォルトはこの環境の唯一の用語集)
+    """
+    log.info("register_glossary_term", term_name=term_name, glossary_name=glossary_name)
+    try:
+        client = get_openmetadata_client()
+        request = {
+            "name": term_name,
+            "description": description,
+            "glossary": glossary_name,
+        }
+        result = client.create_or_update_glossary_term(request)
+        return {"term": term_name, "fqn": result.get("fullyQualifiedName", ""), "created": True, "success": True}
+    except Exception as e:
+        log.error("register_glossary_term_failed", term_name=term_name, error=str(e))
+        return {"error": f"用語登録エラー: {str(e)}", "success": False}
+
+
+@tool
 def update_column_description(
     table_fqn: str,
     column_name: str,

@@ -44,6 +44,8 @@ class ScheduledTaskBridge:
         # サイトごとの実ブローカー接続の連続失敗回数とバックオフ用の最終チェック時刻
         self._broker_failure_counts: dict[str, int] = {}
         self._broker_last_checked: dict[str, float] = {}
+        # GitHub organization への接続を初回利用時に一度だけ履歴パネルへ通知する
+        self._github_notified = False
 
     def start(self, loop: asyncio.AbstractEventLoop) -> None:
         # NOTE: テーブルチェック対象(SCHEDULED_TASK_TABLES)が未設定でも、
@@ -142,22 +144,83 @@ class ScheduledTaskBridge:
     def _register_discovered_topic(self, service_name: str, topic_name: str, fqn: str) -> None:
         from tools.openmetadata.schema_tools import register_topic_metadata
 
+        description, source_note = self._enrich_topic_description(topic_name)
+
         try:
             result = register_topic_metadata.invoke({
                 "topic_name": topic_name,
                 "service_name": service_name,
-                "description": "(自動検知・自動登録) 実ブローカー上に存在するがOpenMetadata未登録だったトピック",
+                "description": description,
             })
         except Exception as e:
             self._emit(self._make_topic_record(fqn, "error", f"自動登録に失敗しました: {e}"))
             return
 
         if result.get("success"):
-            self._emit(self._make_topic_record(
-                fqn, "changed", f"実ブローカーで新規トピックを検知し、OpenMetadataへ自動登録しました: {fqn}",
-            ))
+            message = f"実ブローカーで新規トピックを検知し、OpenMetadataへ自動登録しました: {fqn}"
+            if source_note:
+                message += f" ({source_note})"
+            self._emit(self._make_topic_record(fqn, "changed", message))
         else:
             self._emit(self._make_topic_record(fqn, "error", f"自動登録に失敗しました: {result.get('error')}"))
+
+    def _enrich_topic_description(self, topic_name: str) -> tuple[str, str]:
+        """GitHub organization 内のソースコードから、トピック名に対応する
+        Entity/イベントクラスを探し、そのクラスコメントを説明文として使う。
+        (Code Search API はこの組織のリポジトリではインデックス遅延により
+        機能しないため、リポジトリのファイルツリーを取得してファイル名で
+        絞り込む find_github_files_by_name を使う。)
+        見つからない場合は汎用の説明文にフォールバックする。"""
+        fallback = "(自動検知・自動登録) 実ブローカー上に存在するがOpenMetadata未登録だったトピック"
+        if not self._github_notified:
+            self._github_notified = True
+            self._emit(self._make_topic_record(
+                "(GitHub)", "ok",
+                f"ソースコードからのメタ情報推定のため GitHub organization "
+                f"'{os.environ.get('GITHUB_ORG', 'quarkusdroneshop')}' に接続します(読み取りのみ)",
+            ))
+        if not os.environ.get("GITHUB_TOKEN"):
+            return fallback, ""
+
+        keyword = "".join(part.capitalize() for part in topic_name.replace("_", "-").split("-"))
+        try:
+            from tools.github.github_tools import list_github_org_repos, find_github_files_by_name, get_github_file_content
+
+            repos_result = list_github_org_repos.invoke({})
+            if not repos_result.get("success"):
+                return fallback, ""
+
+            for repo in repos_result.get("repos", []):
+                repo_name = repo["name"]
+                files_result = find_github_files_by_name.invoke({"repo": repo_name, "name_keyword": keyword})
+                if not files_result.get("success") or not files_result.get("paths"):
+                    continue
+                path = files_result["paths"][0]
+                content_result = get_github_file_content.invoke({"repo": repo_name, "path": path})
+                if not content_result.get("success"):
+                    continue
+                comment = self._extract_class_comment(content_result.get("content", ""))
+                if comment:
+                    return comment, f"出典: {repo_name}/{path}"
+        except Exception as e:
+            log.error("topic_enrichment_failed", topic_name=topic_name, error=str(e))
+        return fallback, ""
+
+    @staticmethod
+    def _extract_class_comment(source: str) -> str:
+        """Javaソースの先頭付近にある /** ... */ 形式のクラスコメントを
+        抜き出す(素朴な実装。厳密なパースは行わない)。"""
+        import re
+        match = re.search(r"/\*\*(.*?)\*/", source, re.DOTALL)
+        if not match:
+            return ""
+        lines = [
+            line.strip().lstrip("*").strip()
+            for line in match.group(1).splitlines()
+            if line.strip().lstrip("*").strip()
+        ]
+        comment = " ".join(lines)[:300]
+        return comment
 
     def _check_new_topics(self) -> None:
         """OpenMetadata 上の全トピックを定期的に取得し、前回チェック時には

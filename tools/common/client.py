@@ -121,6 +121,15 @@ class OpenMetadataClientWrapper:
             raise ValueError("トピック作成に失敗しました(レスポンスが空)")
         return result
 
+    def create_or_update_glossary_term(self, request: dict) -> dict:
+        # NOTE: create_or_update_topic と同様、SDK の CreateGlossaryTermRequest
+        # モデルはサーバー(1.13.0)とのフィールド差分で拒否されることがあるため、
+        # 生の REST PUT を使う。
+        result = self._client.client.put("/glossaryTerms", data=json.dumps(request, ensure_ascii=False))
+        if not result:
+            raise ValueError("用語登録に失敗しました(レスポンスが空)")
+        return result
+
     def patch_table(self, fqn: str, patch: dict) -> dict:
         from metadata.generated.schema.entity.data.table import Table
         table = self._client.get_by_name(entity=Table, fqn=fqn)

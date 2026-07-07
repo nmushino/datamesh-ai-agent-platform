@@ -6,10 +6,17 @@ from tools.openmetadata import (
     list_tables,
     register_table_metadata,
     register_topic_metadata,
+    register_glossary_term,
     update_column_description,
     create_quality_rule,
 )
 from tools.kafka import create_kafka_topic
+from tools.github import (
+    find_github_files_by_name,
+    get_github_file_content,
+    get_github_readme,
+    list_github_org_repos,
+)
 
 SYSTEM_PROMPT = (Path(__file__).parent.parent.parent / "prompts/schema/system.md").read_text()
 
@@ -18,9 +25,14 @@ SCHEMA_TOOLS = [
     list_tables,
     register_table_metadata,
     register_topic_metadata,
+    register_glossary_term,
     create_kafka_topic,
     update_column_description,
     create_quality_rule,
+    find_github_files_by_name,
+    get_github_file_content,
+    get_github_readme,
+    list_github_org_repos,
 ]
 
 # 実ブローカーへの書き込みを伴うため承認必須 (orchestrator の human_approval_node で参照)
