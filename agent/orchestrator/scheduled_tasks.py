@@ -31,11 +31,15 @@ class ScheduledTaskBridge:
         self._stop_event = threading.Event()
         # fqn -> {"columns": int, "qualityScore": float} 前回チェック時のスナップショット
         self._snapshots: dict[str, dict] = {}
+        # 新規トピック検知用。None は起動直後で未初期化(この回では通知せず
+        # 既存トピックをベースラインとして記録するだけにする)。
+        self._known_topic_fqns: set[str] | None = None
 
     def start(self, loop: asyncio.AbstractEventLoop) -> None:
+        # NOTE: テーブルチェック対象(SCHEDULED_TASK_TABLES)が未設定でも、
+        # 新規トピック検知は常に有効にしたいためスレッド自体は起動する。
         if not self._table_fqns:
-            log.warning("scheduled_tasks_disabled", reason="SCHEDULED_TASK_TABLES not configured")
-            return
+            log.warning("scheduled_task_tables_not_configured", reason="SCHEDULED_TASK_TABLES not configured")
         self._loop = loop
         self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
@@ -57,7 +61,46 @@ class ScheduledTaskBridge:
     def _run_loop(self) -> None:
         while not self._stop_event.is_set():
             self._check_all_tables()
+            self._check_new_topics()
             self._stop_event.wait(self._interval_seconds)
+
+    def _check_new_topics(self) -> None:
+        """OpenMetadata 上の全トピックを定期的に取得し、前回チェック時には
+        無かった FQN があれば「新規トピックを検知」として通知する。
+        (Kafka ブローカー自体をポーリングするのではなく、OpenMetadata に
+        登録されたメタデータの増分を見る。register_topic_metadata ツールで
+        登録した直後や、外部の ingestion パイプラインが取り込んだ直後に
+        この定期チェックで拾われる。)"""
+        try:
+            client = get_openmetadata_client()
+            topics = client.search_assets(query="*", asset_type="topic", limit=200)
+            current_fqns = {t.get("fullyQualifiedName", "") for t in topics if t.get("fullyQualifiedName")}
+        except Exception as e:
+            log.error("scheduled_task_topic_check_failed", error=str(e))
+            self._emit(self._make_topic_record("(全体)", "error", f"トピック一覧の取得に失敗しました: {e}"))
+            return
+
+        if self._known_topic_fqns is None:
+            self._known_topic_fqns = current_fqns
+            self._emit(self._make_topic_record(
+                "(全体)", "ok", f"初回チェック: 既存トピック {len(current_fqns)} 件をベースラインとして記録"
+            ))
+            return
+
+        new_fqns = current_fqns - self._known_topic_fqns
+        self._known_topic_fqns = current_fqns
+        for fqn in sorted(new_fqns):
+            self._emit(self._make_topic_record(fqn, "changed", f"新しいトピックを検知: {fqn}"))
+
+    def _make_topic_record(self, fqn: str, status: str, message: str) -> dict:
+        return {
+            "id": str(uuid.uuid4()),
+            "task_name": "openmetadata_new_topic_check",
+            "fqn": fqn,
+            "status": status,
+            "message": message,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
 
     def _check_all_tables(self) -> None:
         for fqn in self._table_fqns:
