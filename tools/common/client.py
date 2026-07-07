@@ -118,6 +118,16 @@ class OpenMetadataClientWrapper:
         result = self._client.create_or_update(data=CreateTableRequest(**request))
         return result.dict()
 
+    def create_or_update_topic(self, request: dict) -> dict:
+        # NOTE: pydantic SDK (CreateTopicRequest) はデフォルト値の retentionSize を
+        # 文字列 "-1" としてシリアライズしてしまい、サーバー(1.13.0)側の数値型
+        # バリデーションに弾かれ "Invalid request format" になる。生の REST PUT を
+        # 使えば同じペイロードで正常に作成できるため、SDK モデルを経由しない。
+        result = self._client.client.put("/topics", data=json.dumps(request, ensure_ascii=False))
+        if not result:
+            raise ValueError("トピック作成に失敗しました(レスポンスが空)")
+        return result
+
     def patch_table(self, fqn: str, patch: dict) -> dict:
         from metadata.generated.schema.entity.data.table import Table
         table = self._client.get_by_name(entity=Table, fqn=fqn)

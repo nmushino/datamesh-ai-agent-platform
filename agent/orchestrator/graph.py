@@ -86,6 +86,7 @@ _TOOL_STATUS_LABELS = {
     "get_database_schema":    "テーブルのスキーマ情報を取得しています...",
     "list_tables":            "テーブル一覧を取得しています...",
     "register_table_metadata": "テーブルメタデータを登録しています...",
+    "register_topic_metadata": "Kafkaトピックのメタデータを登録しています...",
     "update_column_description": "カラムの説明を更新しています...",
     "get_data_lineage":       "データリネージを辿っています...",
     "get_quality_metrics":    "データ品質メトリクスを取得しています...",

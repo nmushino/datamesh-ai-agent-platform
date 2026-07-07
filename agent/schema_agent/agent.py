@@ -5,6 +5,7 @@ from tools.openmetadata import (
     get_database_schema,
     list_tables,
     register_table_metadata,
+    register_topic_metadata,
     update_column_description,
     create_quality_rule,
 )
@@ -15,6 +16,7 @@ SCHEMA_TOOLS = [
     get_database_schema,
     list_tables,
     register_table_metadata,
+    register_topic_metadata,
     update_column_description,
     create_quality_rule,
 ]

@@ -106,6 +106,49 @@ def register_table_metadata(
 
 
 @tool
+def register_topic_metadata(
+    topic_name: str,
+    service_name: str,
+    description: str,
+    partitions: int = 1,
+    tags: list[str] | None = None,
+) -> dict:
+    """
+    新しい Kafka トピックのメタデータを OpenMetadata に登録します。
+    (OpenMetadata はメタデータ管理のみを行うため、実際の Kafka ブローカー上に
+    トピックを作成するわけではない。既にブローカー側に存在するトピック、
+    または将来作成予定のトピックについて、OpenMetadata 上での説明・所在を
+    登録するためのツール)
+
+    Args:
+        topic_name: 登録するトピック名 (例: "oder-test")
+        service_name: 対象サイトの Messaging Service 名。
+            Aサイト: "external-shop-cluster-kafka-asite:9094"
+            Bサイト: "external-shop-cluster-kafka-bsite:9094"
+            Cサイト: "external-shop-cluster-kafka-csite:9094"
+        description: トピックの説明（日本語可）
+        partitions: パーティション数 (デフォルト1)
+        tags: タグリスト (任意)
+    """
+    log.info("register_topic_metadata", topic_name=topic_name, service_name=service_name)
+    try:
+        client = get_openmetadata_client()
+        request = {
+            "name": topic_name,
+            "service": service_name,
+            "description": description,
+            "partitions": partitions,
+            "tags": [{"tagFQN": tag} for tag in (tags or [])],
+        }
+        result = client.create_or_update_topic(request)
+        fqn = result.get("fullyQualifiedName", f"{service_name}.{topic_name}")
+        return {"fqn": fqn, "created": True, "result": result, "success": True}
+    except Exception as e:
+        log.error("register_topic_metadata_failed", topic_name=topic_name, error=str(e))
+        return {"error": f"トピック登録エラー: {str(e)}", "success": False}
+
+
+@tool
 def update_column_description(
     table_fqn: str,
     column_name: str,
