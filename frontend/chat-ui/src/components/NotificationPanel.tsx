@@ -18,26 +18,30 @@ export function NotificationPanel({ notifications, onClose }: Props) {
         <div className="notification-empty">通知はありません</div>
       ) : (
         <ul className="notification-list">
-          {notifications.map((n, idx) => (
-            <li key={idx} className="notification-item">
-              <div className="notification-item-top">
-                <span
-                  className={`notification-status notification-status-${(
-                    n.status ?? "info"
-                  ).toLowerCase()}`}
+          {notifications.map((n, idx) => {
+            const statusLower = (n.status ?? "info").toLowerCase();
+            const isError = statusLower === "error" || statusLower === "failed";
+            return (
+              <li key={idx} className="notification-item">
+                <div className="notification-item-top">
+                  <span className={`notification-status notification-status-${statusLower}`}>
+                    {n.status ?? "INFO"}
+                  </span>
+                  {n.pipeline && (
+                    <span className="notification-pipeline">{n.pipeline}</span>
+                  )}
+                </div>
+                <div
+                  className={`notification-message${isError ? " notification-message-error" : ""}`}
                 >
-                  {n.status ?? "INFO"}
-                </span>
-                {n.pipeline && (
-                  <span className="notification-pipeline">{n.pipeline}</span>
+                  {n.message}
+                </div>
+                {n.timestamp && (
+                  <div className="notification-timestamp">{n.timestamp}</div>
                 )}
-              </div>
-              <div className="notification-message">{n.message}</div>
-              {n.timestamp && (
-                <div className="notification-timestamp">{n.timestamp}</div>
-              )}
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
