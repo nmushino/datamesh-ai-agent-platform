@@ -39,7 +39,7 @@ def _to_asset_dict(r: dict, default_type: str, description_max_chars: int) -> di
     # NOTE: OpenMetadata の owner フィールドは複数所有者対応のため
     # "owners" (配列) であり、旧来の単数形 "owner" ではない。
     owners = r.get("owners") or []
-    return {
+    asset = {
         "fqn": r.get("fullyQualifiedName", ""),
         "name": r.get("name", ""),
         # NOTE: 検索インデックスのヒットは "entityType"、ユーザーの owns フィールドの
@@ -48,8 +48,14 @@ def _to_asset_dict(r: dict, default_type: str, description_max_chars: int) -> di
         "description": (r.get("description", "") or "")[:description_max_chars],
         "tags": [t.get("tagFQN", "") for t in r.get("tags", [])],
         "owners": [o.get("displayName") or o.get("name", "") for o in owners],
-        "updatedAt": r.get("updatedAt", ""),
     }
+    # NOTE: owns フィールドのような軽量な EntityReference には updatedAt が
+    # 存在しない。キー自体を空文字で残すとモデルがそれらしい日付を
+    # 勝手に補完してしまう(実際に発生を確認: 全く無関係な2023年の日付を
+    # 表示した)ため、値が無い場合はキーごと省略する。
+    if r.get("updatedAt"):
+        asset["updatedAt"] = r["updatedAt"]
+    return asset
 
 
 @tool
