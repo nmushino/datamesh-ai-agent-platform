@@ -25,5 +25,9 @@ export function useScheduledTasks() {
     };
   }, []);
 
-  return { tasks };
+  const deleteTask = (id: string) => {
+    setTasks((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  return { tasks, deleteTask };
 }

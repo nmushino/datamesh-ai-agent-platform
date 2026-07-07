@@ -12,6 +12,8 @@ interface Props {
   width: number;
   onResizeWidth: (width: number) => void;
   scheduledTasks: ScheduledTask[];
+  onDeleteScheduledTask: (id: string) => void;
+  onSelectScheduledTask: (task: ScheduledTask) => void;
 }
 
 const MIN_WIDTH = 180;
@@ -44,6 +46,8 @@ export function Sidebar({
   width,
   onResizeWidth,
   scheduledTasks,
+  onDeleteScheduledTask,
+  onSelectScheduledTask,
 }: Props) {
   const draggingRef = useRef(false);
 
@@ -77,7 +81,11 @@ export function Sidebar({
       style={{ width: open ? width : 0 }}
     >
       <div className="sidebar-inner" style={{ width }}>
-        <ScheduledTasksArea tasks={scheduledTasks} />
+        <ScheduledTasksArea
+          tasks={scheduledTasks}
+          onDelete={onDeleteScheduledTask}
+          onSelect={onSelectScheduledTask}
+        />
         <button className="new-thread-button" onClick={onCreate}>
           + 新しい会話
         </button>

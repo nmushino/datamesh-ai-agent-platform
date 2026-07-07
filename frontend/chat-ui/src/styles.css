@@ -321,9 +321,9 @@ body,
 }
 
 .scheduled-tasks-header {
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 700;
-  color: #888;
+  color: #666;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   margin-bottom: 6px;
@@ -348,6 +348,28 @@ body,
   align-items: baseline;
   gap: 6px;
   font-size: 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+
+.scheduled-task-item:hover {
+  background: #eef0f3;
+}
+
+.scheduled-task-delete {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: #aaa;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.scheduled-task-delete:hover {
+  color: #c0392b;
 }
 
 .scheduled-task-status {

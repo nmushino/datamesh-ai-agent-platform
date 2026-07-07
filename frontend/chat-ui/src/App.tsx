@@ -8,7 +8,7 @@ import { useThreads } from "./useThreads";
 import { useScheduledTasks } from "./useScheduledTasks";
 import { useNotifications } from "./useNotifications";
 import { sendChatMessage, approveTask } from "./api";
-import type { ChatSettings } from "./types";
+import type { ChatSettings, ScheduledTask } from "./types";
 
 const SIDEBAR_DEFAULT_WIDTH = 300;
 const DEFAULT_CHAT_SETTINGS: ChatSettings = {
@@ -28,7 +28,7 @@ export default function App() {
     updateMessage,
     deleteThread,
   } = useThreads();
-  const { tasks: scheduledTasks } = useScheduledTasks();
+  const { tasks: scheduledTasks, deleteTask: deleteScheduledTask } = useScheduledTasks();
   const { notifications, unreadCount, markAllRead, addLocalNotification } =
     useNotifications();
   const [sending, setSending] = useState(false);
@@ -134,6 +134,25 @@ export default function App() {
       });
   };
 
+  // 定期チェック実行履歴の項目をクリックすると、その結果を表示する専用の
+  // 新規会話を作成する(既存の会話には混ぜない)。
+  const handleSelectScheduledTask = (task: ScheduledTask) => {
+    const threadId = createThread();
+    setShowQuickActions(false);
+    appendMessage(threadId, {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      content:
+        `### 定期チェック実行結果\n\n` +
+        `- **タスク**: ${task.task_name}\n` +
+        `- **対象**: ${task.fqn}\n` +
+        `- **ステータス**: ${task.status}\n` +
+        `- **時刻**: ${new Date(task.timestamp).toLocaleString("ja-JP")}\n\n` +
+        `${task.message}`,
+      createdAt: Date.now(),
+    });
+  };
+
   if (auth.error) {
     return (
       <div className="auth-status">
@@ -171,6 +190,8 @@ export default function App() {
           width={sidebarWidth}
           onResizeWidth={setSidebarWidth}
           scheduledTasks={scheduledTasks}
+          onDeleteScheduledTask={deleteScheduledTask}
+          onSelectScheduledTask={handleSelectScheduledTask}
         />
         <ChatBody
           thread={activeThread}
