@@ -110,7 +110,7 @@ class ScheduledTaskBridge:
             result = register_topic_metadata.invoke({
                 "topic_name": topic_name,
                 "service_name": service_name,
-                "description": f"(自動検知・自動登録) 実ブローカー上に存在するがOpenMetadata未登録だったトピック",
+                "description": "(自動検知・自動登録) 実ブローカー上に存在するがOpenMetadata未登録だったトピック",
             })
         except Exception as e:
             self._emit(self._make_topic_record(fqn, "error", f"自動登録に失敗しました: {e}"))

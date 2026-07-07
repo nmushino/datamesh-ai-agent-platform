@@ -93,24 +93,17 @@ class OpenMetadataClientWrapper:
         return sources[:limit]
 
     def get_owned_assets(self, owner_name: str, limit: int = 10) -> list[dict]:
-        # NOTE: owners.name などのフィールド指定クエリはこの ES マッピングでは
-        # 0 件になる (nested/keyword フィールドの扱いの都合と思われる)。
-        # ワイルドカードの全文検索であれば owners 内の name/displayName に
-        # ヒットすることを確認済みのため、こちらを使う。
-        q = quote_plus(f"*{owner_name}*")
-        response = self._client.client.get(
-            f"/search/query?q={q}&index=all&size={limit * 4}&deleted=false"
-        )
-        hits = (response or {}).get("hits", {}).get("hits", [])
-        owned = [
-            hit.get("_source", {})
-            for hit in hits
-            if hit.get("_source", {}).get("entityType") in self._DATA_ASSET_ENTITY_TYPES
-            and any(
-                o.get("name") == owner_name or o.get("displayName") == owner_name
-                for o in (hit.get("_source", {}).get("owners") or [])
-            )
-        ]
+        # NOTE: OpenMetadata の「My Data」画面 (/users/{name}/mydata) は
+        # ユーザーエンティティの owns フィールド(実際の所有関係)を表示する。
+        # 以前は search/query の全文検索でowners配列内の名前一致を推測して
+        # いたが、これは entityType の異なる無関係なエンティティ(ingestion
+        # pipeline等)も混ざり、My Data 画面の実際の表示と食い違うことがある
+        # ため、owns フィールドを直接使う方式に変更した。
+        user = self._client.client.get(f"/users/name/{owner_name}?fields=owns")
+        if not user:
+            return []
+        owns = user.get("owns") or []
+        owned = [o for o in owns if o.get("type") in self._DATA_ASSET_ENTITY_TYPES]
         return owned[:limit]
 
     def create_or_update_table(self, request: dict) -> dict:

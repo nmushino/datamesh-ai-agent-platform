@@ -42,7 +42,9 @@ def _to_asset_dict(r: dict, default_type: str, description_max_chars: int) -> di
     return {
         "fqn": r.get("fullyQualifiedName", ""),
         "name": r.get("name", ""),
-        "type": r.get("entityType", default_type),
+        # NOTE: 検索インデックスのヒットは "entityType"、ユーザーの owns フィールドの
+        # ような軽量な EntityReference は "type" というキー名を使うため両対応する。
+        "type": r.get("entityType") or r.get("type") or default_type,
         "description": (r.get("description", "") or "")[:description_max_chars],
         "tags": [t.get("tagFQN", "") for t in r.get("tags", [])],
         "owners": [o.get("displayName") or o.get("name", "") for o in owners],

@@ -341,7 +341,7 @@ if [ -z "$KEYCLOAK_ROUTE_HOST" ]; then
 fi
 if [ -n "$AI_AGENT_ROUTE_HOST" ]; then
   APPS_DOMAIN="${APPS_DOMAIN:-${AI_AGENT_ROUTE_HOST#*.}}"
-  OPENMETADATA_URL="${OPENMETADATA_URL:-http://openmetadata-openmetadata.${APPS_DOMAIN}}"
+  OPENMETADATA_URL="${OPENMETADATA_URL:-http://openmetadata-openmetadata.${APPS_DOMAIN}/my-data}"
   DEVELOPER_HUB_URL="${DEVELOPER_HUB_URL:-https://backstage-developer-hub-quarkusdroneshop-rhdh.${APPS_DOMAIN}}"
   oc set env deployment/chat-ui -n "$NAMESPACE" \
     "API_BASE_URL=https://${AI_AGENT_ROUTE_HOST}" \
