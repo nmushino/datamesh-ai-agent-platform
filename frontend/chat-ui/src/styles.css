@@ -704,6 +704,8 @@ body,
   font-size: 14px;
   line-height: 1.5;
   white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 /* Markdown レンダリング後は <p>/<h3-6> のデフォルト margin により
