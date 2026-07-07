@@ -896,7 +896,8 @@ body,
   padding: 10px 34px 10px 12px;
   font-size: 14px;
   font-family: inherit;
-  min-height: 44px;
+  /* 常に3行分の高さを確保する (JS側の TEXTAREA_MIN_HEIGHT と一致させる) */
+  min-height: 78.8px;
   /* 展開時(最大15行)を妨げないよう、JS側で計算する上限値以上を確保しておく */
   max-height: 320px;
   overflow-y: auto;

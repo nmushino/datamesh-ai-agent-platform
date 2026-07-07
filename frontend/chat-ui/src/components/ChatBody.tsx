@@ -17,7 +17,9 @@ interface Props {
   onChatSettingsChange: (settings: ChatSettings) => void;
 }
 
-const TEXTAREA_MIN_HEIGHT = 44; // .chat-input の min-height と一致させる (送信ボタンとの縦位置ズレ防止)
+// line-height 1.4 * font-size 14px * 3行 + 上下padding(10px*2)
+// 入力欄は常に3行分の高さを確保し、それを超える入力があった場合のみ広げる
+const TEXTAREA_MIN_HEIGHT = 3 * 14 * 1.4 + 20; // .chat-input の min-height と一致させる (送信ボタンとの縦位置ズレ防止)
 const TEXTAREA_COLLAPSED_MAX_HEIGHT = 160;
 // line-height 1.4 * font-size 14px * 15行 + 上下padding(10px*2)
 const TEXTAREA_EXPANDED_MAX_HEIGHT = 15 * 14 * 1.4 + 20;
@@ -174,7 +176,7 @@ export function ChatBody({
               className="chat-input"
               value={input}
               placeholder="メッセージを入力... (Enterキーを3回連続で送信、またはボタンをクリック)"
-              rows={1}
+              rows={3}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
             />
