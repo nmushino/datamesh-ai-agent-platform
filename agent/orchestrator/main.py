@@ -21,6 +21,7 @@ from agent.common.llm import MAX_TOKENS_LEVELS, DEFAULT_MAX_TOKENS_LEVEL  # noqa
 from agent.orchestrator.graph import create_graph, _status_queue_var  # noqa: E402
 from agent.orchestrator.notifications import get_bridge as get_notification_bridge  # noqa: E402
 from agent.orchestrator.scheduled_tasks import get_bridge as get_scheduled_task_bridge  # noqa: E402
+from tools.common.history_store import get_history_store  # noqa: E402
 
 log = structlog.get_logger()
 
@@ -272,6 +273,12 @@ async def chat(req: ChatRequest, request: Request):
             return
         last_message = messages[-1]
         reply = last_message.content if hasattr(last_message, "content") else str(last_message)
+
+        history_store = get_history_store()
+        if history_store and req.user_id:
+            history_store.log_turn(thread_id, req.user_id, "user", req.message)
+            history_store.log_turn(thread_id, req.user_id, "assistant", reply)
+
         payload = ChatResponse(
             thread_id=thread_id,
             reply=reply,

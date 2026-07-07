@@ -9,6 +9,7 @@ from tools.openmetadata import (
     get_database_schema,
     get_data_lineage,
     get_quality_metrics,
+    search_conversation_history,
 )
 from tools.business import search_customers, search_bom
 
@@ -24,6 +25,7 @@ SEARCH_TOOLS = [
     get_quality_metrics,
     search_customers,
     search_bom,
+    search_conversation_history,
 ]
 
 
