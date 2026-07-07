@@ -87,6 +87,7 @@ _TOOL_STATUS_LABELS = {
     "list_tables":            "テーブル一覧を取得しています...",
     "register_table_metadata": "テーブルメタデータを登録しています...",
     "register_topic_metadata": "Kafkaトピックのメタデータを登録しています...",
+    "create_kafka_topic":     "対象サイトの実ブローカーにトピックを作成しています...",
     "update_column_description": "カラムの説明を更新しています...",
     "get_data_lineage":       "データリネージを辿っています...",
     "get_quality_metrics":    "データ品質メトリクスを取得しています...",
@@ -199,6 +200,69 @@ def _normalize_site_query(tool_name: str, args: dict, user_text: str = "") -> di
     return args
 
 
+# NOTE: 実際の外部ブローカーへの書き込みを伴うツールはプロンプト指示だけでは
+# 「先に確認を求める」を徹底できない(検証済み: 依頼された直後の1ターン目で
+# そのまま実行しようとした)ため、コード側で「直前の会話で既に承認確認を
+# 提示済みかどうか」を判定し、未確認ならツール自体を実行させずに確認メッセージ
+# だけを返す安全策を設ける。
+_CONFIRM_BEFORE_EXECUTE_TOOLS = {"create_kafka_topic"}
+
+
+def _confirmation_pending_message(tc_args: dict) -> AIMessage:
+    topic = tc_args.get("topic_name", "")
+    service = tc_args.get("service_name", "")
+    return AIMessage(content=(
+        f"{service} の実ブローカーに `{topic}` トピックを新規作成します。"
+        f"この操作は外部システムへの実際の書き込みを伴うため、承認が必要です。"
+        f"よろしければ「承認します」のように返信してください。"
+    ))
+
+
+def _already_confirmed(topic_name: str, prior_messages: list) -> bool:
+    if not topic_name:
+        return False
+    return any(
+        isinstance(m, AIMessage) and "承認" in str(m.content) and topic_name in str(m.content)
+        for m in prior_messages
+    )
+
+
+def _topic_already_created_on_broker(topic_name: str, service_name: str, prior_messages: list) -> bool:
+    for m in prior_messages:
+        if isinstance(m, ToolMessage) and m.name == "create_kafka_topic":
+            try:
+                data = json.loads(m.content)
+            except (TypeError, ValueError):
+                continue
+            if data.get("success") and data.get("topic_name") == topic_name and data.get("service_name") == service_name:
+                return True
+    return False
+
+
+def _inject_missing_topic_creation(tool_calls: list, prior_messages: list) -> list:
+    """register_topic_metadata が呼ばれたが、対応する create_kafka_topic が
+    まだ成功していない場合、モデルが手順を省略しても実ブローカーへの作成を
+    飛ばさないよう、直前に create_kafka_topic 呼び出しを自動的に挿入する。"""
+    result = []
+    for tc in tool_calls:
+        if tc["name"] == "register_topic_metadata":
+            topic_name = tc["args"].get("topic_name", "")
+            service_name = tc["args"].get("service_name", "")
+            if not _topic_already_created_on_broker(topic_name, service_name, prior_messages):
+                result.append({
+                    "name": "create_kafka_topic",
+                    "args": {
+                        "topic_name": topic_name,
+                        "service_name": service_name,
+                        "partitions": tc["args"].get("partitions", 1),
+                    },
+                    "id": f"{tc['id']}-auto-create",
+                    "type": "tool_call",
+                })
+        result.append(tc)
+    return result
+
+
 def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, input_messages: list) -> list:
     """ツールバインディングされたLLMで手動のReActループを回す
     (create_react_agentのネストしたグラフ実行は使わない。理由は _SUBAGENT_CONFIGS
@@ -222,17 +286,42 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
         new_messages.append(ai_message)
         if not tool_calls:
             break
+
+        tool_calls = _inject_missing_topic_creation(tool_calls, messages[:-1])
+
+        pending_tc = next(
+            (tc for tc in tool_calls
+             if tc["name"] in _CONFIRM_BEFORE_EXECUTE_TOOLS
+             and not _already_confirmed(tc["args"].get("topic_name", ""), messages[:-1])),
+            None,
+        )
+        if pending_tc:
+            confirm_message = _confirmation_pending_message(pending_tc["args"])
+            messages.append(confirm_message)
+            new_messages.append(confirm_message)
+            # 未確認の書き込みツールはこの応答内では一切実行しない
+            # (同じ応答に含まれる他のツール呼び出しも合わせて中断する)。
+            break
+
+        broker_creation_failed = False
         for tc in tool_calls:
-            tool_fn = tool_map.get(tc["name"])
-            if tool_fn:
-                if status_q:
-                    status_q.put(
-                        _TOOL_STATUS_LABELS.get(tc["name"], f"{tc['name']} を実行しています...")
-                    )
-                tool_args = _normalize_site_query(tc["name"], tc["args"], latest_human_text)
-                result = tool_fn.invoke(tool_args)
+            if tc["name"] == "register_topic_metadata" and broker_creation_failed:
+                # 直前の create_kafka_topic が失敗した場合、実体のないトピックを
+                # OpenMetadata にだけ登録してしまわないよう、後続の登録もスキップする。
+                result = {"error": "実ブローカーへのトピック作成に失敗したため、メタデータ登録をスキップしました", "success": False}
             else:
-                result = {"error": f"unknown tool: {tc['name']}", "success": False}
+                tool_fn = tool_map.get(tc["name"])
+                if tool_fn:
+                    if status_q:
+                        status_q.put(
+                            _TOOL_STATUS_LABELS.get(tc["name"], f"{tc['name']} を実行しています...")
+                        )
+                    tool_args = _normalize_site_query(tc["name"], tc["args"], latest_human_text)
+                    result = tool_fn.invoke(tool_args)
+                    if tc["name"] == "create_kafka_topic" and not result.get("success"):
+                        broker_creation_failed = True
+                else:
+                    result = {"error": f"unknown tool: {tc['name']}", "success": False}
             tool_message = ToolMessage(
                 content=json.dumps(result, ensure_ascii=False),
                 tool_call_id=tc["id"],
@@ -369,9 +458,18 @@ def schema_agent_node(state: AgentState) -> dict:
         _clamp_tool_agent_max_tokens(state.get("max_tokens", 1024)),
         input_messages,
     )
+
+    # 承認フラグの検出（レスポンスに「承認」キーワードが含まれるか）。
+    # create_kafka_topic は実際の外部ブローカーへの書き込みを伴うため、
+    # registration_agent と同様の human-in-the-loop 経路を通す。
+    last_content = new_messages[-1].content
+    requires_approval = "承認" in last_content or "confirm" in last_content.lower()
+
     return {
         "messages": new_messages,
         "active_agent": "schema",
+        "requires_approval": requires_approval,
+        "approval_action": last_content if requires_approval else "",
         "agent_output": {"messages": [new_messages[-1].content]},
         "token_usage": sum_tokens(new_messages),
     }
@@ -476,8 +574,16 @@ def create_graph(checkpointer=None) -> object:
     )
 
     graph.add_edge("chitchat", END)
-    graph.add_edge("schema_agent", END)
     graph.add_edge("search_agent", END)
+
+    graph.add_conditional_edges(
+        "schema_agent",
+        _check_approval,
+        {
+            "done":          END,
+            "needs_approval": "human_approval",
+        },
+    )
 
     graph.add_conditional_edges(
         "registration_agent",

@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import structlog
 
 from tools.common.client import get_openmetadata_client
+from tools.kafka.admin_tools import _SITE_BOOTSTRAP_SERVERS
 
 log = structlog.get_logger()
 
@@ -62,7 +63,65 @@ class ScheduledTaskBridge:
         while not self._stop_event.is_set():
             self._check_all_tables()
             self._check_new_topics()
+            self._check_broker_topics()
             self._stop_event.wait(self._interval_seconds)
+
+    def _check_broker_topics(self) -> None:
+        """各サイトの実 Kafka ブローカーのトピック一覧を取得し、
+        OpenMetadata に未登録のものがあれば register_topic_metadata で
+        自動登録する。(create_kafka_topic のような書き込みではなく、
+        list_topics() のみを使う読み取り専用チェック。ブローカー自体は
+        変更しない。)"""
+        from kafka.admin import KafkaAdminClient
+
+        try:
+            om_client = get_openmetadata_client()
+            om_topics = om_client.search_assets(query="*", asset_type="topic", limit=200)
+            om_fqns = {t.get("fullyQualifiedName", "") for t in om_topics if t.get("fullyQualifiedName")}
+        except Exception as e:
+            log.error("scheduled_task_broker_check_om_fetch_failed", error=str(e))
+            return
+
+        for service_name, bootstrap in _SITE_BOOTSTRAP_SERVERS.items():
+            try:
+                admin = KafkaAdminClient(
+                    bootstrap_servers=bootstrap, client_id="ai-agent-scheduled-check", request_timeout_ms=8000,
+                )
+                try:
+                    broker_topic_names = set(admin.list_topics())
+                finally:
+                    admin.close()
+            except Exception as e:
+                self._emit(self._make_topic_record(
+                    f"({service_name})", "error", f"実ブローカーへの接続に失敗しました: {e}",
+                ))
+                continue
+
+            for topic_name in sorted(broker_topic_names):
+                fqn = f"{service_name}.{topic_name}"
+                if fqn in om_fqns:
+                    continue
+                self._register_discovered_topic(service_name, topic_name, fqn)
+
+    def _register_discovered_topic(self, service_name: str, topic_name: str, fqn: str) -> None:
+        from tools.openmetadata.schema_tools import register_topic_metadata
+
+        try:
+            result = register_topic_metadata.invoke({
+                "topic_name": topic_name,
+                "service_name": service_name,
+                "description": f"(自動検知・自動登録) 実ブローカー上に存在するがOpenMetadata未登録だったトピック",
+            })
+        except Exception as e:
+            self._emit(self._make_topic_record(fqn, "error", f"自動登録に失敗しました: {e}"))
+            return
+
+        if result.get("success"):
+            self._emit(self._make_topic_record(
+                fqn, "changed", f"実ブローカーで新規トピックを検知し、OpenMetadataへ自動登録しました: {fqn}",
+            ))
+        else:
+            self._emit(self._make_topic_record(fqn, "error", f"自動登録に失敗しました: {result.get('error')}"))
 
     def _check_new_topics(self) -> None:
         """OpenMetadata 上の全トピックを定期的に取得し、前回チェック時には

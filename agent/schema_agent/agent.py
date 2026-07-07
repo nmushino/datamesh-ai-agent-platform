@@ -9,6 +9,7 @@ from tools.openmetadata import (
     update_column_description,
     create_quality_rule,
 )
+from tools.kafka import create_kafka_topic
 
 SYSTEM_PROMPT = (Path(__file__).parent.parent.parent / "prompts/schema/system.md").read_text()
 
@@ -17,9 +18,13 @@ SCHEMA_TOOLS = [
     list_tables,
     register_table_metadata,
     register_topic_metadata,
+    create_kafka_topic,
     update_column_description,
     create_quality_rule,
 ]
+
+# 実ブローカーへの書き込みを伴うため承認必須 (orchestrator の human_approval_node で参照)
+APPROVAL_REQUIRED_TOOLS = {"create_kafka_topic"}
 
 
 def create_schema_agent(enable_thinking: bool = False, max_tokens: int = 1024):
