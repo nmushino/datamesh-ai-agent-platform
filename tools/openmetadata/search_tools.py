@@ -128,7 +128,20 @@ def get_my_data_assets(owner_name: str, limit: int = 10) -> dict:
         client = get_openmetadata_client()
         results = client.get_owned_assets(owner_name, limit)
         assets = [_to_asset_dict(r, "all", DESCRIPTION_MAX_CHARS) for r in results]
-        return {"assets": assets, "total": len(assets), "owner": owner_name, "success": True}
+        # NOTE: この一覧は複数の資産タイプ(table/topic/dataProduct等)が
+        # 1つのリストに混在しているため、資産タイプ別の内訳件数を
+        # 明示的に含める。モデルが応答のタイプ別見出し「(N件)」に、
+        # 全体の total 値をそのまま使ってしまう誤りを防ぐため。
+        counts_by_type: dict[str, int] = {}
+        for a in assets:
+            counts_by_type[a["type"]] = counts_by_type.get(a["type"], 0) + 1
+        return {
+            "assets": assets,
+            "total": len(assets),
+            "counts_by_type": counts_by_type,
+            "owner": owner_name,
+            "success": True,
+        }
     except Exception as e:
         log.error("get_my_data_assets_failed", owner_name=owner_name, error=str(e))
         return {"error": f"取得エラー: {str(e)}", "success": False}
