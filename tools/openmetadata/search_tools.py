@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Literal
 import structlog
 from langchain_core.tools import tool
@@ -53,8 +54,17 @@ def _to_asset_dict(r: dict, default_type: str, description_max_chars: int) -> di
     # 存在しない。キー自体を空文字で残すとモデルがそれらしい日付を
     # 勝手に補完してしまう(実際に発生を確認: 全く無関係な2023年の日付を
     # 表示した)ため、値が無い場合はキーごと省略する。
-    if r.get("updatedAt"):
-        asset["updatedAt"] = r["updatedAt"]
+    # また、値がある場合も Unix epoch ミリ秒の生数値のまま渡すとモデルが
+    # 日付換算を誤ることが確認された(例: 実際は2026-07-06のデータを
+    # 2023-11-08と表示した)ため、ここで確実な日付文字列に変換しておく。
+    updated_at = r.get("updatedAt")
+    if updated_at:
+        try:
+            asset["updatedAt"] = datetime.fromtimestamp(
+                int(updated_at) / 1000, tz=timezone.utc
+            ).strftime("%Y-%m-%d %H:%M")
+        except (ValueError, TypeError, OSError):
+            pass
     return asset
 
 

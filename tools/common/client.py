@@ -83,14 +83,18 @@ class OpenMetadataClientWrapper:
         return sources[:limit]
 
     def get_recent_activity(self, limit: int = 10) -> list[dict]:
+        # NOTE: q=* だと更新頻度の高い tableColumn 等の非データ資産で埋まり、
+        # limit*4 件取得しても実データ資産が limit 未満しか残らないことが
+        # あった(実測: limit=5 で1件のみ)。entityType をクエリ自体で
+        # 絞り込むことで、必要件数を確実に取得する。
+        entity_types = " OR ".join(self._DATA_ASSET_ENTITY_TYPES)
+        q = quote_plus(f"entityType:({entity_types})")
         response = self._client.client.get(
-            f"/search/query?q=*&index=all&size={limit * 4}&deleted=false"
+            f"/search/query?q={q}&index=all&size={limit}&deleted=false"
             "&sort_field=updatedAt&sort_order=desc"
         )
         hits = (response or {}).get("hits", {}).get("hits", [])
-        sources = [hit.get("_source", {}) for hit in hits]
-        sources = [s for s in sources if s.get("entityType") in self._DATA_ASSET_ENTITY_TYPES]
-        return sources[:limit]
+        return [hit.get("_source", {}) for hit in hits][:limit]
 
     def get_owned_assets(self, owner_name: str, limit: int = 10) -> list[dict]:
         # NOTE: OpenMetadata の「My Data」画面 (/users/{name}/mydata) は
