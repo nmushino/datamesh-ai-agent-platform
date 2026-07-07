@@ -74,6 +74,11 @@ class NotificationBridge:
             payload = json.loads(raw)
         except json.JSONDecodeError:
             payload = {"message": raw}
+        self.push(payload)
+
+    def push(self, payload: dict) -> None:
+        """pipeline-notifications トピック以外(定期チェックのエラー等)からも
+        通知ベルへ直接配信するための公開メソッド。"""
         self._recent.append(payload)
         log.info("notification_received", payload=payload)
         if self._loop is None:

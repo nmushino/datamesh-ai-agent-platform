@@ -219,10 +219,26 @@ class ScheduledTaskBridge:
     def _emit(self, record: dict) -> None:
         self._recent.append(record)
         log.info("scheduled_task_executed", **record)
+        if record.get("status") == "error":
+            self._notify_error(record)
         if self._loop is None:
             return
         for queue in list(self._subscribers):
             self._loop.call_soon_threadsafe(queue.put_nowait, record)
+
+    def _notify_error(self, record: dict) -> None:
+        """定期チェックのエラーは実行履歴パネルだけでなく通知ベルにも
+        表示する(見落としを防ぐため)。"""
+        from agent.orchestrator.notifications import get_bridge as get_notification_bridge
+        try:
+            get_notification_bridge().push({
+                "pipeline": record.get("task_name", "scheduled_task"),
+                "status": "ERROR",
+                "message": f"[定期チェック] {record.get('fqn', '')}: {record.get('message', '')}",
+                "timestamp": record.get("timestamp", ""),
+            })
+        except Exception as e:
+            log.error("scheduled_task_notify_error_failed", error=str(e))
 
 
 _bridge: ScheduledTaskBridge | None = None
