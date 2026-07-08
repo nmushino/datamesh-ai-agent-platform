@@ -6,6 +6,14 @@ from tools.common.client import get_openmetadata_client
 
 log = structlog.get_logger()
 
+# ツール付きエージェントの max_tokens はコンテキスト長節約のため 2048 に
+# クランプされている (agent/orchestrator/graph.py の _TOOL_AGENT_MAX_TOKENS_CAP)。
+# プロンプトで「limitは15〜20程度に」と指示するだけではモデルが守らないことが
+# あり、対象(例:1サイトの全トピック)によっては件数が多すぎて要約がこの
+# トークン予算に収まらず、コンテキスト長超過で応答が途中で切れる。
+# そのためモデルが指定した limit に関わらず、ここで確実に上限をかける。
+_MAX_ASSETS_PER_CALL = 15
+
 
 @tool
 def search_data_assets(
@@ -20,17 +28,26 @@ def search_data_assets(
         query: 検索クエリ (例: "顧客の注文履歴", "drone delivery")
         asset_type: 絞り込む資産タイプ。"table", "topic", "pipeline", "data_product", "all" のいずれか。
             「データプロダクト」を尋ねられた場合は必ず "data_product" を指定すること。
-        limit: 最大取得件数 (1-100)
+        limit: 最大取得件数 (1件以上を指定可能だが、実際には1回の呼び出しあたり
+            最大15件までに制限される。それ以上必要な場合は複数回に分けて呼び出すこと)
     """
     log.info("search_data_assets", query=query, asset_type=asset_type)
     # NOTE: description (特にデータプロダクト/契約情報) が非常に長い場合があり、
     # 未加工のまま複数件返すと vLLM の max-model-len (8192) を容易に超えるため切り詰める
     DESCRIPTION_MAX_CHARS = 150
+    effective_limit = min(max(int(limit), 1), _MAX_ASSETS_PER_CALL)
     try:
         client = get_openmetadata_client()
-        results = client.search_assets(query, asset_type, limit)
+        results = client.search_assets(query, asset_type, effective_limit)
         assets = [_to_asset_dict(r, asset_type, DESCRIPTION_MAX_CHARS) for r in results]
-        return {"assets": assets, "total": len(assets), "query": query, "success": True}
+        truncated = len(assets) == _MAX_ASSETS_PER_CALL
+        result = {"assets": assets, "total": len(assets), "query": query, "success": True}
+        if truncated:
+            result["note"] = (
+                f"1回の呼び出しにつき最大{_MAX_ASSETS_PER_CALL}件までしか返せない制限があり、"
+                "他にも該当する資産が存在する可能性があります。"
+            )
+        return result
     except Exception as e:
         log.error("search_data_assets_failed", query=query, error=str(e))
         return {"error": f"検索エラー: {str(e)}", "success": False}
