@@ -22,8 +22,28 @@ from agent.orchestrator.graph import create_graph, _status_queue_var  # noqa: E4
 from agent.orchestrator.notifications import get_bridge as get_notification_bridge  # noqa: E402
 from agent.orchestrator.scheduled_tasks import get_bridge as get_scheduled_task_bridge  # noqa: E402
 from tools.common.history_store import get_history_store  # noqa: E402
+from tools.common.settings_store import get_settings_store  # noqa: E402
 
 log = structlog.get_logger()
+
+_MAX_TOKENS_SETTINGS_KEYS = {
+    "low": "max_tokens_level_low",
+    "medium": "max_tokens_level_medium",
+    "high": "max_tokens_level_high",
+    "max": "max_tokens_level_max",
+}
+
+
+def _current_max_tokens_levels() -> dict:
+    """設定画面から変更された値があればそれを使い、無ければ既定値を使う。"""
+    store = get_settings_store()
+    levels = dict(MAX_TOKENS_LEVELS)
+    if store:
+        for level, key in _MAX_TOKENS_SETTINGS_KEYS.items():
+            value = store.get(key)
+            if value is not None:
+                levels[level] = int(value)
+    return levels
 
 _graph = None
 _checkpointer_stack = ExitStack()
@@ -177,7 +197,8 @@ def _invoke_graph(req: ChatRequest, thread_id: str, config: dict, status_q: queu
     # run_in_executor の同一ワーカースレッド内で最後まで実行されるため、
     # スレッドをまたがず伝播できる)。
     _status_queue_var.set(status_q)
-    max_tokens = MAX_TOKENS_LEVELS.get(req.max_tokens_level, MAX_TOKENS_LEVELS[DEFAULT_MAX_TOKENS_LEVEL])
+    max_tokens_levels = _current_max_tokens_levels()
+    max_tokens = max_tokens_levels.get(req.max_tokens_level, max_tokens_levels[DEFAULT_MAX_TOKENS_LEVEL])
     for chunk in _graph.stream(
         {
             "messages": [HumanMessage(content=req.message)],
@@ -360,6 +381,28 @@ def update_scheduled_task_settings(req: ScheduledTaskSettings):
         backoff_failure_threshold=req.backoff_failure_threshold,
         backoff_interval_seconds=req.backoff_interval_seconds,
     )
+
+
+class MaxTokensSettings(BaseModel):
+    low: int | None = None
+    medium: int | None = None
+    high: int | None = None
+    max: int | None = None
+
+
+@app.get("/api/v1/settings/max-tokens")
+def get_max_tokens_settings():
+    return _current_max_tokens_levels()
+
+
+@app.put("/api/v1/settings/max-tokens")
+def update_max_tokens_settings(req: MaxTokensSettings):
+    store = get_settings_store()
+    updates = req.model_dump(exclude_none=True)
+    if store:
+        for level, value in updates.items():
+            store.set(_MAX_TOKENS_SETTINGS_KEYS[level], str(value))
+    return _current_max_tokens_levels()
 
 
 @app.get("/api/v1/scheduled-tasks/stream")

@@ -40,6 +40,14 @@ export interface ScheduledTaskSettings {
   backoff_interval_seconds: number;
 }
 
+// 低/中/高/最高 それぞれの実際のmax_tokens値(全ユーザー共通のバックエンド設定)。
+export interface MaxTokensSettings {
+  low: number;
+  medium: number;
+  high: number;
+  max: number;
+}
+
 export interface ChatResponse {
   thread_id: string;
   reply: string;

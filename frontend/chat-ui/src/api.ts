@@ -1,6 +1,7 @@
 import type {
   ChatResponse,
   ChatSettings,
+  MaxTokensSettings,
   Notification,
   ScheduledTask,
   ScheduledTaskSettings,
@@ -148,6 +149,28 @@ export async function updateScheduledTaskSettings(
   patch: Partial<ScheduledTaskSettings>
 ): Promise<ScheduledTaskSettings> {
   const res = await fetch(`${apiBaseUrl()}/api/v1/settings/scheduled-task`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    throw new Error(`settings update failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function fetchMaxTokensSettings(): Promise<MaxTokensSettings | null> {
+  const res = await fetch(`${apiBaseUrl()}/api/v1/settings/max-tokens`);
+  if (!res.ok) {
+    return null;
+  }
+  return res.json();
+}
+
+export async function updateMaxTokensSettings(
+  patch: Partial<MaxTokensSettings>
+): Promise<MaxTokensSettings> {
+  const res = await fetch(`${apiBaseUrl()}/api/v1/settings/max-tokens`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
