@@ -1076,6 +1076,33 @@ body,
   font-size: 13px;
 }
 
+.settings-field-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-field-save {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: white;
+  background: #4457e6;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.settings-field-save:hover:not(:disabled) {
+  background: #3646c4;
+}
+
+.settings-field-save:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
 .settings-modal-level-group {
   display: flex;
   gap: 4px;
