@@ -14,6 +14,15 @@ log = structlog.get_logger()
 # そのためモデルが指定した limit に関わらず、ここで確実に上限をかける。
 _MAX_ASSETS_PER_CALL = 15
 
+# 15件全件に説明文を付けたままだと、件数が多い場合(例:1サイトの全トピック)
+# モデルが表全体を書き出すだけでmax_tokens予算を使い切ってしまい、
+# コンテキスト長超過で応答が途中で切れることが確認された。
+# そのため、件数が多い場合は「安全に説明文まで書ける件数」までは詳細
+# (説明文付き)を返し、それ以降は名前とFQNのみ(説明文は省略)にする。
+# FQN列はフロントエンド側で自動的にOpenMetadataへのリンクに変換される
+# ため、説明文が無くても参照は可能。
+_FULL_DETAIL_ASSET_COUNT = 8
+
 
 @tool
 def search_data_assets(
@@ -39,12 +48,25 @@ def search_data_assets(
     try:
         client = get_openmetadata_client()
         results = client.search_assets(query, asset_type, effective_limit)
-        assets = [_to_asset_dict(r, asset_type, DESCRIPTION_MAX_CHARS) for r in results]
+        assets = [
+            _to_asset_dict(
+                r,
+                asset_type,
+                DESCRIPTION_MAX_CHARS if i < _FULL_DETAIL_ASSET_COUNT else 0,
+            )
+            for i, r in enumerate(results)
+        ]
         truncated = len(assets) == _MAX_ASSETS_PER_CALL
         result = {"assets": assets, "total": len(assets), "query": query, "success": True}
-        if truncated:
+        if len(assets) > _FULL_DETAIL_ASSET_COUNT:
             result["note"] = (
-                f"1回の呼び出しにつき最大{_MAX_ASSETS_PER_CALL}件までしか返せない制限があり、"
+                f"件数が多いため、{_FULL_DETAIL_ASSET_COUNT}件目以降は説明文を省略している"
+                "(description が空文字列)。それらは名前とFQNのみを行に含め、"
+                "説明文の代わりに「詳細はFQNのリンク先を参照」のように書くこと。"
+            )
+        if truncated:
+            result["note"] = result.get("note", "") + (
+                f" 1回の呼び出しにつき最大{_MAX_ASSETS_PER_CALL}件までしか返せない制限があり、"
                 "他にも該当する資産が存在する可能性があります。"
             )
         return result
