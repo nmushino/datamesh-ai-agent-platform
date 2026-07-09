@@ -23,6 +23,62 @@ OpenMetadata             Quarkus API
           PostgreSQL         Kafka        他システム
 ```
 
+## ガードレールアーキテクチャ
+```
+
+                User
+                  │
+                  ▼
+        API Gateway / MCP Gateway
+                  │
+        +----------------------+
+        | Input Guardrail      |
+        +----------------------+
+                  │
+                  ▼
+          Planner Agent
+                  │
+                  ▼
+          Policy Engine
+        (OPA + Keycloak)
+                  │
+      ┌───────────┴────────────┐
+      ▼                        ▼
+ MCP Tool                REST Tool
+ Camel Tool             SQL Tool
+ Git Tool               Shell Tool
+      │                        │
+      └───────────┬────────────┘
+                  ▼
+        Output Guardrail
+                  │
+          Human Approval
+                  │
+             Audit Log
+
+```
+## ガードレール構成案
+```
+datamesh-ai-agent-platform
+
+├── planner-agent
+├── memory
+├── mcp-client
+├── mcp-server
+├── tool-wrapper
+├── ai-policy-gateway   ← 新規
+│      ├── input filter
+│      ├── OPA client
+│      ├── tool policy
+│      ├── output filter
+│      ├── audit
+│      └── cost limiter
+├── opa
+├── keycloak
+├── opentelemetry
+└── approval-service
+```
+
 ## 主要ユースケース
 
 | ユースケース | 説明 |
