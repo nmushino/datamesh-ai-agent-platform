@@ -66,6 +66,10 @@ OpenMetadata             Quarkus API
 ./scripts/deploy.sh
 ```
 
+## Bug List
+
+LangGraphの入れ子実行(グラフの中でさらに別のコンパイル済みグラフを呼び出す)自体にバグがあるため、stream()/.invoke()どちらでも、外側グラフ経由でノード関数を実行すると必ず失敗する。代わりにそのままPython関数として直接呼んだ場合は毎回成功する。これはcreate_react_agentが内部でコンパイル済みグラフを作る仕組みのため、サブエージェントをLangGraphの外側グラフの中で使う限り避けられないことがわかっている。対策として、サブエージェントのツール呼び出しループをLangGraphのネストしたグラフを使わず、LLM+ツールバインディングによる手動ループに置き換えることで回避する。
+
 ---
 
 # Datamesh AI Agent Platform
@@ -136,6 +140,3 @@ OpenMetadata             Quarkus API
 ./scripts/deploy.sh
 ```
 
-## Bug List
-
-LangGraphの入れ子実行(グラフの中でさらに別のコンパイル済みグラフを呼び出す)自体にバグがあるようです — .stream()/.invoke()どちらでも、外側グラフ経由でノード関数を実行すると必ず失敗し、素のPython関数として直接呼んだ場合は毎回成功します。これはcreate_react_agentが内部でコンパイル済みグラフを作る仕組みのため、サブエージェントをLangGraphの外側グラフの中で使う限り避けられません。対策として、サブエージェントのツール呼び出しループをLangGraphのネストしたグラフを使わず、LLM+ツールバインディングによる手動ループに置き換えます。
