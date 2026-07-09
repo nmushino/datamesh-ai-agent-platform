@@ -1,6 +1,8 @@
+日本語 | [English](#Datamesh AI Agent Platform)
+
 # Datamesh AI Agent Platform
 
-OpenShift AI 上で動作する、OpenMetadata を中心としたエンタープライズ AI エージェントプラットフォームです。
+OpenShift AI 上で動作する、OpenMetadata を中心としたエンタープライズ AI エージェントプラットフォームである。
 
 ## アーキテクチャ概要
 
