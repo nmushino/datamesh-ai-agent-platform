@@ -110,7 +110,7 @@ data:
   db-username: "postgres"
   # OpenMetadata / Kafka / Keycloak は openmetadata / quarkusdroneshop-demo / keycloak
   # namespace の既存インスタンスを共用する
-  kafka-bootstrap-servers: "kafka-cluster-kafka-bootstrap.quarkusdroneshop-demo.svc.cluster.local:9092"
+  kafka-bootstrap-servers: "shop-cluster-kafka-bootstrap.quarkusdroneshop-demo.svc.cluster.local:9092"
   openmetadata-host: "http://openmetadata.openmetadata.svc.cluster.local:8585"
   # keycloak-url は deploy.sh が既存Keycloakの外部Routeホスト名で上書きする
   # (トークンのiss claimが外部Route URLになるため、内部Service URLではなく

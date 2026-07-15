@@ -19,7 +19,7 @@ spec:
       default: "Failed"
     - name: bootstrap-servers
       type: string
-      default: "kafka-cluster-kafka-bootstrap.quarkusdroneshop-demo.svc.cluster.local:9092"
+      default: "shop-cluster-kafka-bootstrap.quarkusdroneshop-demo.svc.cluster.local:9092"
     - name: topic
       type: string
       default: "pipeline-notifications"

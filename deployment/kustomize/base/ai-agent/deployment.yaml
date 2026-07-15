@@ -129,7 +129,7 @@ data:
   # deploy.sh がRoute作成後に実際のホスト名で上書きする。
   openmetadata-public-url: ""
   business-api-url: "http://business-api:8080"
-  kafka-bootstrap-servers: "kafka-cluster-kafka-bootstrap.quarkusdroneshop-demo.svc.cluster.local:9092"
+  kafka-bootstrap-servers: "shop-cluster-kafka-bootstrap.quarkusdroneshop-demo.svc.cluster.local:9092"
   # Agentによる定期チェック対象テーブル(カンマ区切りの完全修飾名)。空の場合は定期チェックを無効化する
   scheduled-task-tables: ""
   scheduled-task-interval-seconds: "600"
