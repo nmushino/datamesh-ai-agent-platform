@@ -88,6 +88,47 @@ spec:
                 secretKeyRef:
                   name: agent-db-secret
                   key: url
+            # delete_kafka_topic が削除前後にMirrorMaker2を一時停止/再開するために使う、
+            # 各サイト自身のKubernetes APIへの認証情報(mm2-extended リソースの
+            # get/patchのみに絞ったScoped ServiceAccountトークン)。未設定でも
+            # 動作するが、その場合MM2の一時停止をスキップする
+            # (tools/kafka/admin_tools.py の _mm2_api_config 参照)。
+            - name: ASITE_MM2_API_SERVER
+              valueFrom:
+                secretKeyRef:
+                  name: asite-mm2-pause-token
+                  key: api-server
+                  optional: true
+            - name: ASITE_MM2_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: asite-mm2-pause-token
+                  key: token
+                  optional: true
+            - name: BSITE_MM2_API_SERVER
+              valueFrom:
+                secretKeyRef:
+                  name: bsite-mm2-pause-token
+                  key: api-server
+                  optional: true
+            - name: BSITE_MM2_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: bsite-mm2-pause-token
+                  key: token
+                  optional: true
+            - name: CSITE_MM2_API_SERVER
+              valueFrom:
+                secretKeyRef:
+                  name: csite-mm2-pause-token
+                  key: api-server
+                  optional: true
+            - name: CSITE_MM2_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: csite-mm2-pause-token
+                  key: token
+                  optional: true
           resources:
             requests:
               cpu: "500m"

@@ -101,6 +101,21 @@ spec:
             cidr: 3.132.44.216/32   # external-shop-cluster-kafka-csite advertised ELB (AZ2)
       ports:
         - port: 9094
+    # A/B/C サイト自身の Kubernetes API サーバーへの egress。delete_kafka_topic が
+    # 削除前後に各サイトの MirrorMaker2 (KafkaMirrorMaker2 リソース) を
+    # 一時停止/再開するために必要(スコープを絞った ServiceAccount トークン
+    # 経由、*-mm2-pause-token Secret 参照)。Kafka wire protocol (Skupper 経由)
+    # とは別に、Kubernetes API 自体への到達性が新たに必要になった。
+    # IPはサイトのクラスターが再プロビジョニングされる度に変わりうる点に注意。
+    - to:
+        - ipBlock:
+            cidr: 3.151.177.141/32  # A-site API server (api.ocp.zgjl6.sandbox780.opentlc.com)
+        - ipBlock:
+            cidr: 18.217.43.147/32  # B-site API server (api.ocp.659hh.sandbox2372.opentlc.com)
+        - ipBlock:
+            cidr: 18.226.195.149/32 # C-site API server (api.ocp.nbg84.sandbox2422.opentlc.com)
+      ports:
+        - port: 6443
     - to:
         - namespaceSelector:
             matchLabels:
