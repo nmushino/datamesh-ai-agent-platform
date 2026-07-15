@@ -10,7 +10,7 @@ import structlog
 
 from tools.common.client import get_openmetadata_client
 from tools.common.settings_store import get_settings_store
-from tools.kafka.admin_tools import _SITE_BOOTSTRAP_SERVERS
+from tools.kafka.admin_tools import _SITE_BOOTSTRAP_SERVERS, list_broker_topics
 
 log = structlog.get_logger()
 
@@ -127,8 +127,6 @@ class ScheduledTaskBridge:
         自動登録する。(create_kafka_topic のような書き込みではなく、
         list_topics() のみを使う読み取り専用チェック。ブローカー自体は
         変更しない。)"""
-        from kafka.admin import KafkaAdminClient
-
         try:
             om_client = get_openmetadata_client()
             om_topics = om_client.search_assets(query="*", asset_type="topic", limit=200)
@@ -150,13 +148,7 @@ class ScheduledTaskBridge:
 
             self._broker_last_checked[service_name] = now
             try:
-                admin = KafkaAdminClient(
-                    bootstrap_servers=bootstrap, client_id="ai-agent-scheduled-check", request_timeout_ms=8000,
-                )
-                try:
-                    broker_topic_names = set(admin.list_topics())
-                finally:
-                    admin.close()
+                broker_topic_names = list_broker_topics(bootstrap)
             except Exception as e:
                 self._broker_failure_counts[service_name] = failures + 1
                 self._notify_broker_connection_error(service_name, e)

@@ -39,6 +39,21 @@ _SITE_BOOTSTRAP_SERVERS = {
 _CMD_TIMEOUT_SECONDS = 20
 
 
+def list_broker_topics(bootstrap: str) -> set[str]:
+    """指定ブローカー上に存在するトピック名の集合を返す(kafka-topics.sh --list)。
+    scheduled_tasks.py の定期スキャンから使われる読み取り専用のヘルパー。
+    接続/コマンド失敗時は例外をそのまま送出する(呼び出し元でバックオフ処理する)。"""
+    result = subprocess.run(
+        [_KAFKA_TOPICS_CMD, "--list", "--bootstrap-server", bootstrap],
+        capture_output=True,
+        text=True,
+        timeout=_CMD_TIMEOUT_SECONDS,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip())
+    return {line.strip() for line in result.stdout.splitlines() if line.strip()}
+
+
 @tool
 def create_kafka_topic(topic_name: str, service_name: str, partitions: int = 1, replication_factor: int = 1) -> dict:
     """
