@@ -418,12 +418,19 @@ def intent_classifier_node(state: AgentState) -> dict:
     intent, matched_pattern = classify_intent_detailed(text)
 
     # NOTE: create_kafka_topic/delete_kafka_topic 等の書き込みツールは、
-    # 直前のターンで「承認が必要です」という確認メッセージを返し、ユーザーの
-    # 次の返信(「承認します」等)を待つ2段階フローになっている。しかしその
-    # 返信の文面自体は「トピック」「作成」等のキーワードを含まないことが多く、
-    # キーワードベースのルーターでは intent=unknown -> search_agent に
-    # 誤ルーティングされ、schema_agent 側の承認待ち状態に到達できなかった
-    # (create_kafka_topic が存在しないと誤回答する原因になっていた)。
+    # 直前のターンで確認メッセージを返し、ユーザーの次の返信(「承認します」等)
+    # を待つ2段階フローになっている。しかしその返信の文面自体は「トピック」
+    # 「作成」等のキーワードを含まないことが多く、キーワードベースのルーター
+    # では intent=unknown -> search_agent に誤ルーティングされ、schema_agent
+    # 側の承認待ち状態に到達できなかった(create_kafka_topic が存在しないと
+    # 誤回答する原因になっていた)。
+    #
+    # 確認メッセージの文面は固定テンプレート(_confirmation_pending_message、
+    # "承認が必要です"を含む)経由の場合と、システムプロンプトの指示に従って
+    # LLMが自由文で生成する場合の両方があり、後者は文言が一定しない
+    # (実際に「よろしいですか？」等、"承認が必要です"を含まない文面で
+    # 発生・再現した)。システムプロンプトが唯一保証しているのは応答に
+    # 「承認」という語を含めることだけなので、それを判定に使う。
     # 直前のAIメッセージが確認待ちプロンプトであれば、キーワード一致に
     # 関わらず schema_sync に留める。
     #
@@ -441,7 +448,7 @@ def intent_classifier_node(state: AgentState) -> dict:
             isinstance(m, ToolMessage) and m.name in _WRITE_TOOL_NAMES
             for m in messages[-6:-1]
         )
-        if isinstance(prev_text, str) and "承認が必要です" in prev_text:
+        if isinstance(prev_text, str) and "承認" in prev_text:
             intent, matched_pattern = "schema_sync", "(pending_approval_continuation)"
         elif recent_write_tool_call:
             intent, matched_pattern = "schema_sync", "(pending_retry_continuation)"
