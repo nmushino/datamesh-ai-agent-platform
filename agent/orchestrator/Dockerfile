@@ -25,7 +25,7 @@ ARG KAFKA_DIST_VERSION=4.1.0
 ARG KAFKA_SCALA_VERSION=2.13
 RUN apt-get update && \
     apt-get install -y --no-install-recommends openjdk-21-jre-headless curl && \
-    curl -fsSL "https://downloads.apache.org/kafka/${KAFKA_DIST_VERSION}/kafka_${KAFKA_SCALA_VERSION}-${KAFKA_DIST_VERSION}.tgz" \
+    curl -fsSL "https://archive.apache.org/dist/kafka/${KAFKA_DIST_VERSION}/kafka_${KAFKA_SCALA_VERSION}-${KAFKA_DIST_VERSION}.tgz" \
       -o /tmp/kafka.tgz && \
     mkdir -p /opt/kafka && \
     tar -xzf /tmp/kafka.tgz -C /opt/kafka --strip-components=1 && \
