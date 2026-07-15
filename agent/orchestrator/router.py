@@ -20,6 +20,13 @@ _INTENT_PATTERNS: list[tuple[str, list[str]]] = [
         "openmetadata.*登録", "テーブル.*登録", "schema.*sync",
         "トピック.*登録", "トピック.*追加", "トピック.*作成", "トピック.*削除",
         "topic.*register", "topic.*create", "topic.*delete",
+        # NOTE: 実際のトピック名自体が英語("orders-topic"等)であることが多く、
+        # 「orders-topicを削除して」のように英語のトピック名+日本語の動詞が
+        # 混在するケースがある。この場合「トピック」というカタカナ語も
+        # 「delete」という英語動詞も現れないため、上記のパターンだけでは
+        # 一致しない。"topic" という文字列(英語トピック名の一部としても
+        # 頻出)と日本語の動詞を組み合わせて拾う。
+        "topic.*作成", "topic.*追加", "topic.*登録", "topic.*削除",
     ]),
     ("metadata_update", [
         "説明.*更新", "タグ.*付け", "オーナー.*変更",
