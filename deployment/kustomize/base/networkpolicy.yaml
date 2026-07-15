@@ -80,19 +80,25 @@ spec:
               kubernetes.io/metadata.name: quarkusdroneshop-rhdh
     # NOTE: Kafka の AdminClient/Producer/Consumer は bootstrap 接続後、各リクエストを
     # 個別ブローカーの advertised.listeners 先へ直接接続する。A/B/C サイトの external
-    # リスナーは advertised host に AWS ELB の公開ホスト名を使っているため、
-    # Skupper (quarkusdroneshop-rhdh namespace) への egress だけでは
-    # listTopics/createTopics/produce が "waiting for a node assignment" 等で
-    # タイムアウトする。ELB の IP は再割り当てされることがある(過去に実際に
-    # 発生し Skupper リンク断の原因になった)ため、この許可リストは ELB の
-    # IP が変わった際に更新が必要になる点に注意。
+    # リスナーは advertised host に AWS ELB (マルチAZ、AZごとに1 IPで計2 IP/サイト)
+    # の公開ホスト名を使っているため、Skupper (quarkusdroneshop-rhdh namespace) への
+    # egress だけでは listTopics/createTopics/produce/delete が
+    # "waiting for a node assignment" 等でタイムアウトする。ELB の IP は再割り当て
+    # されることがある(過去に実際に発生し Skupper リンク断の原因になった)ため、
+    # この許可リストは ELB の IP が変わった際に更新が必要になる点に注意。
     - to:
         - ipBlock:
-            cidr: 13.59.244.2/32   # external-shop-cluster-kafka-asite advertised ELB
+            cidr: 13.59.244.2/32    # external-shop-cluster-kafka-asite advertised ELB (AZ1)
         - ipBlock:
-            cidr: 3.136.53.135/32  # external-shop-cluster-kafka-bsite advertised ELB
+            cidr: 3.132.118.191/32  # external-shop-cluster-kafka-asite advertised ELB (AZ2)
         - ipBlock:
-            cidr: 18.188.138.218/32 # external-shop-cluster-kafka-csite advertised ELB
+            cidr: 3.136.53.135/32   # external-shop-cluster-kafka-bsite advertised ELB (AZ1)
+        - ipBlock:
+            cidr: 18.117.213.10/32  # external-shop-cluster-kafka-bsite advertised ELB (AZ2)
+        - ipBlock:
+            cidr: 18.188.138.218/32 # external-shop-cluster-kafka-csite advertised ELB (AZ1)
+        - ipBlock:
+            cidr: 3.132.44.216/32   # external-shop-cluster-kafka-csite advertised ELB (AZ2)
       ports:
         - port: 9094
     - to:
