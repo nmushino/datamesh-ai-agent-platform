@@ -16,6 +16,25 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Kafka Admin操作(トピック作成等)は、KRaftブローカーとのAPIVersionネゴシエーション
+# 非互換が確認された Python クライアントライブラリを使わず、実績のある
+# kafka-topics.sh (CLI) を subprocess 経由で呼び出す方式にしている
+# (tools/kafka/admin_tools.py 参照)。そのため CLI 実行に必要な JRE と
+# Kafka クライアント配布物をここで用意する。
+ARG KAFKA_DIST_VERSION=4.1.0
+ARG KAFKA_SCALA_VERSION=2.13
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends openjdk-17-jre-headless curl && \
+    curl -fsSL "https://downloads.apache.org/kafka/${KAFKA_DIST_VERSION}/kafka_${KAFKA_SCALA_VERSION}-${KAFKA_DIST_VERSION}.tgz" \
+      -o /tmp/kafka.tgz && \
+    mkdir -p /opt/kafka && \
+    tar -xzf /tmp/kafka.tgz -C /opt/kafka --strip-components=1 && \
+    rm /tmp/kafka.tgz && \
+    apt-get purge -y curl && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+ENV PATH=/opt/kafka/bin:$PATH
+
 # ビルドステージの依存パッケージをコピー
 COPY --from=builder /app/.local /app/.local
 ENV PYTHONUSERBASE=/app/.local

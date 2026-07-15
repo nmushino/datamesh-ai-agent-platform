@@ -5,20 +5,23 @@ OpenMetadata に登録されている A/B/C サイトの messagingService
 quarkusdroneshop-rhdh namespace 内にサービスとして公開されている。
 OpenMetadata へのメタデータ登録(register_topic_metadata)とは別に、
 このツールで実際のブローカー上にトピックを作成する。
+
+Python の Kafka クライアントライブラリ(kafka-python)は、この Kafka 4.x
+(KRaft) ブローカーとの ApiVersions ネゴシエーションが非互換で
+NodeNotReadyError/NoBrokersAvailable になることを確認済みのため使わない。
+実績のある kafka-topics.sh (CLI, コンテナイメージに同梱) を subprocess
+経由で呼び出す。
 """
 from __future__ import annotations
 
+import subprocess
+
 import structlog
-# librdkafka バインディングの管理クライアント。kafka-python は Kafka 4.x
-# (KRaft) ブローカーの ApiVersions ネゴシエーションと非互換で
-# NodeNotReadyError/NoBrokersAvailable になるため、実ブローカーへの
-# 管理操作 (トピック作成等) はこちらを使う。
-from confluent_kafka import KafkaException as RdKafkaException
-from confluent_kafka.admin import AdminClient as RdKafkaAdminClient
-from confluent_kafka.admin import NewTopic as RdKafkaNewTopic
 from langchain_core.tools import tool
 
 log = structlog.get_logger()
+
+_KAFKA_TOPICS_CMD = "kafka-topics.sh"
 
 # NOTE: これらのブローカーは ai-agent-orchestrator と別 namespace
 # (quarkusdroneshop-rhdh) で Skupper により公開されているサービスのため、
@@ -32,6 +35,8 @@ _SITE_BOOTSTRAP_SERVERS = {
     "external-shop-cluster-kafka-bsite:9094": "external-shop-cluster-kafka-bsite.quarkusdroneshop-rhdh.svc.cluster.local:9094",
     "external-shop-cluster-kafka-csite:9094": "external-shop-cluster-kafka-csite.quarkusdroneshop-rhdh.svc.cluster.local:9094",
 }
+
+_CMD_TIMEOUT_SECONDS = 20
 
 
 @tool
@@ -61,12 +66,27 @@ def create_kafka_topic(topic_name: str, service_name: str, partitions: int = 1, 
 
     log.info("create_kafka_topic", topic_name=topic_name, service_name=service_name, bootstrap=bootstrap)
     try:
-        admin = RdKafkaAdminClient({"bootstrap.servers": bootstrap, "client.id": "ai-agent-topic-admin"})
-        futures = admin.create_topics(
-            [RdKafkaNewTopic(topic_name, num_partitions=partitions, replication_factor=replication_factor)],
-            request_timeout=10,
+        result = subprocess.run(
+            [
+                _KAFKA_TOPICS_CMD,
+                "--create",
+                "--bootstrap-server", bootstrap,
+                "--topic", topic_name,
+                "--partitions", str(partitions),
+                "--replication-factor", str(replication_factor),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=_CMD_TIMEOUT_SECONDS,
         )
-        futures[topic_name].result(timeout=10)
+    except subprocess.TimeoutExpired:
+        log.error("create_kafka_topic_failed", topic_name=topic_name, service_name=service_name, error="timeout")
+        return {"error": f"トピック作成エラー ({bootstrap}): コマンドがタイムアウトしました", "success": False}
+    except Exception as e:
+        log.error("create_kafka_topic_failed", topic_name=topic_name, service_name=service_name, error=str(e))
+        return {"error": f"トピック作成エラー ({bootstrap}): {str(e)}", "success": False}
+
+    if result.returncode == 0:
         return {
             "topic_name": topic_name,
             "service_name": service_name,
@@ -74,17 +94,16 @@ def create_kafka_topic(topic_name: str, service_name: str, partitions: int = 1, 
             "created": True,
             "success": True,
         }
-    except RdKafkaException as e:
-        if e.args and e.args[0].code() == "TOPIC_ALREADY_EXISTS":
-            return {
-                "topic_name": topic_name,
-                "service_name": service_name,
-                "created": False,
-                "message": "トピックは既にブローカー上に存在します",
-                "success": True,
-            }
-        log.error("create_kafka_topic_failed", topic_name=topic_name, service_name=service_name, error=str(e))
-        return {"error": f"トピック作成エラー ({bootstrap}): {str(e)}", "success": False}
-    except Exception as e:
-        log.error("create_kafka_topic_failed", topic_name=topic_name, service_name=service_name, error=str(e))
-        return {"error": f"トピック作成エラー ({bootstrap}): {str(e)}", "success": False}
+
+    stderr = result.stderr.strip()
+    if "TopicExistsException" in stderr:
+        return {
+            "topic_name": topic_name,
+            "service_name": service_name,
+            "created": False,
+            "message": "トピックは既にブローカー上に存在します",
+            "success": True,
+        }
+
+    log.error("create_kafka_topic_failed", topic_name=topic_name, service_name=service_name, error=stderr)
+    return {"error": f"トピック作成エラー ({bootstrap}): {stderr or result.stdout.strip()}", "success": False}
