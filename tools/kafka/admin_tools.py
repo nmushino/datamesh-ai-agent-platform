@@ -37,9 +37,10 @@ _SITE_BOOTSTRAP_SERVERS = {
 }
 
 # kafka-topics.sh はコマンドごとに JVM を新規起動するため、Pythonクライアント
-# と比べて起動コストが大きい。コンテナのCPU制限(500m)下では実測で
-# 40秒前後かかることを確認したため、それに対して十分な余裕を持たせる。
-_CMD_TIMEOUT_SECONDS = 60
+# と比べて起動コストが大きい。コンテナのCPU上限を引き上げた後も、バックグラウンド
+# の notification consumer (kafka-python、既知の非互換で再接続を繰り返し続けている)
+# がCPUを奪い合うことで実測60秒を超えるケースが確認されたため、さらに余裕を持たせる。
+_CMD_TIMEOUT_SECONDS = 90
 
 
 def list_broker_topics(bootstrap: str) -> set[str]:

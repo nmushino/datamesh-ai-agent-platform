@@ -417,20 +417,34 @@ def intent_classifier_node(state: AgentState) -> dict:
     text = last_message.content if hasattr(last_message, "content") else str(last_message)
     intent, matched_pattern = classify_intent_detailed(text)
 
-    # NOTE: create_kafka_topic 等の書き込みツールは、直前のターンで
-    # 「承認が必要です」という確認メッセージを返し、ユーザーの次の返信
-    # (「承認します」等)を待つ2段階フローになっている。しかしその返信の
-    # 文面自体は「トピック」「作成」等のキーワードを含まないことが多く、
+    # NOTE: create_kafka_topic/delete_kafka_topic 等の書き込みツールは、
+    # 直前のターンで「承認が必要です」という確認メッセージを返し、ユーザーの
+    # 次の返信(「承認します」等)を待つ2段階フローになっている。しかしその
+    # 返信の文面自体は「トピック」「作成」等のキーワードを含まないことが多く、
     # キーワードベースのルーターでは intent=unknown -> search_agent に
     # 誤ルーティングされ、schema_agent 側の承認待ち状態に到達できなかった
     # (create_kafka_topic が存在しないと誤回答する原因になっていた)。
     # 直前のAIメッセージが確認待ちプロンプトであれば、キーワード一致に
     # 関わらず schema_sync に留める。
+    #
+    # 同様に、ツール実行がタイムアウト等で失敗した直後に「再試行します」の
+    # ような短い返信をした場合も、その文面にはキーワードが含まれず
+    # 誤ルーティングされる。こちらはLLMが自由文でエラー内容を要約するため
+    # 固定文言でのマッチが効かない。直近の会話に create_kafka_topic /
+    # delete_kafka_topic の ToolMessage が含まれていれば、そのまま継続中の
+    # 操作とみなして schema_sync に留める。
+    _WRITE_TOOL_NAMES = {"create_kafka_topic", "delete_kafka_topic"}
     if intent == "unknown" and len(messages) >= 2:
         prev_ai = messages[-2]
         prev_text = prev_ai.content if hasattr(prev_ai, "content") else str(prev_ai)
+        recent_write_tool_call = any(
+            isinstance(m, ToolMessage) and m.name in _WRITE_TOOL_NAMES
+            for m in messages[-6:-1]
+        )
         if isinstance(prev_text, str) and "承認が必要です" in prev_text:
             intent, matched_pattern = "schema_sync", "(pending_approval_continuation)"
+        elif recent_write_tool_call:
+            intent, matched_pattern = "schema_sync", "(pending_retry_continuation)"
 
     log.info(
         "intent_classified", intent=intent, matched_pattern=matched_pattern,
