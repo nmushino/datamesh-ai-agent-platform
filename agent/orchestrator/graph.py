@@ -663,6 +663,22 @@ def _check_approval(state: AgentState) -> str:
     return "done"
 
 
+def _route_after_approval(state: AgentState) -> str:
+    # NOTE: human_approval は schema_agent/registration_agent のどちらから
+    # 遷移してきたかに関わらず同じノードを共有しているため、承認後は
+    # active_agent (承認待ちを要求した側のエージェント) に戻す必要がある。
+    # 以前は無条件で END に遷移していたため、ChatUI の「承認」ボタン経由
+    # (POST /api/v1/approve -> _graph.invoke(None, config) での再開)では
+    # human_approval を通過して即 END に到達するだけで、確認待ちだった
+    # create_kafka_topic 等のツール呼び出しが実行されないまま完了扱いに
+    # なるバグがあった(チャットで直接「承認します」と返信した場合は毎回
+    # 新規にグラフが最初から実行され schema_agent_node が再度呼ばれるため
+    # 気づかれにくかった)。
+    if state.get("active_agent") == "registration":
+        return "registration_agent"
+    return "schema_agent"
+
+
 def create_graph(checkpointer=None) -> object:
     graph = StateGraph(AgentState)
 
@@ -707,7 +723,14 @@ def create_graph(checkpointer=None) -> object:
         },
     )
 
-    graph.add_edge("human_approval", END)
+    graph.add_conditional_edges(
+        "human_approval",
+        _route_after_approval,
+        {
+            "schema_agent":       "schema_agent",
+            "registration_agent": "registration_agent",
+        },
+    )
 
     if checkpointer:
         checkpointer.setup()
