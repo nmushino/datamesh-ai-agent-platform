@@ -59,6 +59,11 @@ _SITE_SHORT_NAMES = {
 # がCPUを奪い合うことで実測60秒を超えるケースが確認されたため、さらに余裕を持たせる。
 _CMD_TIMEOUT_SECONDS = 90
 
+# ミラーコピー("shop-<サイト>.<トピック名>")は元トピックの作成/削除有無に
+# 応じて存在しないこともあり、その場合は UnknownTopicOrPartitionException で
+# 即座に返る想定の操作のため、通常の削除より短いタイムアウトでよい。
+_MIRROR_DELETE_TIMEOUT_SECONDS = 15
+
 # MM2は自身の内部チェックポイント(config/offset storageトピック)を基に
 # トピックを再作成することがあり、ミラー先を削除してもソース側の現状に
 # 関わらず復活してしまうことを実際に確認した(A/B/Cのミラーを何度削除しても
@@ -208,7 +213,7 @@ def create_kafka_topic(topic_name: str, service_name: str, partitions: int = 1, 
     return {"error": f"トピック作成エラー ({bootstrap}): {stderr or result.stdout.strip()}", "success": False}
 
 
-def _delete_topic_on_broker(bootstrap: str, topic_name: str) -> dict:
+def _delete_topic_on_broker(bootstrap: str, topic_name: str, timeout_seconds: int = _CMD_TIMEOUT_SECONDS) -> dict:
     """指定ブローカー上の指定トピックを削除する内部ヘルパー。
     topic_name/service_name を含まない結果 dict (deleted/success/message/error) を返す。"""
     try:
@@ -221,7 +226,7 @@ def _delete_topic_on_broker(bootstrap: str, topic_name: str) -> dict:
             ],
             capture_output=True,
             text=True,
-            timeout=_CMD_TIMEOUT_SECONDS,
+            timeout=timeout_seconds,
         )
     except subprocess.TimeoutExpired:
         return {"error": f"トピック削除エラー ({bootstrap}): コマンドがタイムアウトしました", "success": False}
@@ -287,7 +292,7 @@ def delete_kafka_topic(topic_name: str, service_name: str) -> dict:
             if other_service == service_name:
                 continue
             mirror_topic = f"shop-{short_name}.{topic_name}"
-            mirror_result = _delete_topic_on_broker(other_bootstrap, mirror_topic)
+            mirror_result = _delete_topic_on_broker(other_bootstrap, mirror_topic, timeout_seconds=_MIRROR_DELETE_TIMEOUT_SECONDS)
             if not mirror_result["success"]:
                 log.error(
                     "delete_kafka_topic_mirror_failed",
