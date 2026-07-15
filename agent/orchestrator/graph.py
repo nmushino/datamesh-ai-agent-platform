@@ -327,15 +327,30 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
     for _ in range(_MAX_TOOL_ITERATIONS):
         try:
             ai_message = llm_with_tools.invoke(messages)
-        except Exception:
+        except Exception as e:
             # NOTE: このターンで既にツール呼び出し等が進んでいた場合、コンテキスト長
-            # 超過で例外を送出してすべて失うのではなく、ここまでの内容を打ち切り
-            # 通知付きで返す(呼び出し元 _invoke_subagent_ensured の縮小リトライは
-            # まだ一度もツールを呼べていない=new_messages が空の場合のために残す)。
+            # 超過で例外を送出してすべて失うのではなく、まず出力トークン数(max_tokens)
+            # をエラーメッセージから算出した安全な値まで縮小して要約の再試行を1回
+            # 行う。以前はここで無条件に生JSONダンプへフォールバックしており、
+            # 15件程度のツール結果でも要約生成が毎回コンテキスト長超過になる
+            # ケース(例:「Aサイトのトピック一覧」)で必ずJSON生データ表示に
+            # なってしまっていた。縮小できない、または縮小後も失敗する場合のみ
+            # 打ち切り通知付きで返す。まだ一度もツールを呼べていない
+            # (new_messages が空)場合は呼び出し元 _invoke_subagent_ensured の
+            # 縮小リトライに委ねる。
             if not new_messages:
                 raise
-            new_messages.append(AIMessage(content=_partial_result_notice(new_messages)))
-            return new_messages
+            safe_max = _shrink_max_tokens_for_error(str(e), max_tokens)
+            if safe_max is None or safe_max <= 0:
+                new_messages.append(AIMessage(content=_partial_result_notice(new_messages)))
+                return new_messages
+            log.warning("context_length_retry", node=agent_name, safe_max_tokens=safe_max)
+            llm_with_tools = get_llm(enable_thinking=enable_thinking, max_tokens=safe_max).bind_tools(tools)
+            try:
+                ai_message = llm_with_tools.invoke(messages)
+            except Exception:
+                new_messages.append(AIMessage(content=_partial_result_notice(new_messages)))
+                return new_messages
         tool_calls = getattr(ai_message, "tool_calls", None) or []
         if not tool_calls:
             ai_message = _continue_if_truncated(llm_with_tools, messages, ai_message, status_q)
