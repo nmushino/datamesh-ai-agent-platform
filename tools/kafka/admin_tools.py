@@ -125,3 +125,69 @@ def create_kafka_topic(topic_name: str, service_name: str, partitions: int = 1, 
 
     log.error("create_kafka_topic_failed", topic_name=topic_name, service_name=service_name, error=stderr)
     return {"error": f"トピック作成エラー ({bootstrap}): {stderr or result.stdout.strip()}", "success": False}
+
+
+@tool
+def delete_kafka_topic(topic_name: str, service_name: str) -> dict:
+    """
+    対象サイトの実際の Kafka ブローカー上のトピックを削除します。
+    (この操作はブローカー上のデータを完全に失わせる不可逆な書き込みです。
+    OpenMetadata側のメタデータ登録は削除しないため、必要であれば別途
+    OpenMetadata側のエントリも整理すること)
+
+    Args:
+        topic_name: 削除するトピック名
+        service_name: 対象サイトの Messaging Service 名。
+            Aサイト: "external-shop-cluster-kafka-asite:9094"
+            Bサイト: "external-shop-cluster-kafka-bsite:9094"
+            Cサイト: "external-shop-cluster-kafka-csite:9094"
+    """
+    bootstrap = _SITE_BOOTSTRAP_SERVERS.get(service_name)
+    if not bootstrap:
+        return {
+            "error": f"未知の service_name: {service_name}。"
+                     f"利用可能な値: {list(_SITE_BOOTSTRAP_SERVERS.keys())}",
+            "success": False,
+        }
+
+    log.info("delete_kafka_topic", topic_name=topic_name, service_name=service_name, bootstrap=bootstrap)
+    try:
+        result = subprocess.run(
+            [
+                _KAFKA_TOPICS_CMD,
+                "--delete",
+                "--bootstrap-server", bootstrap,
+                "--topic", topic_name,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=_CMD_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        log.error("delete_kafka_topic_failed", topic_name=topic_name, service_name=service_name, error="timeout")
+        return {"error": f"トピック削除エラー ({bootstrap}): コマンドがタイムアウトしました", "success": False}
+    except Exception as e:
+        log.error("delete_kafka_topic_failed", topic_name=topic_name, service_name=service_name, error=str(e))
+        return {"error": f"トピック削除エラー ({bootstrap}): {str(e)}", "success": False}
+
+    if result.returncode == 0:
+        return {
+            "topic_name": topic_name,
+            "service_name": service_name,
+            "bootstrap_servers": bootstrap,
+            "deleted": True,
+            "success": True,
+        }
+
+    stderr = result.stderr.strip()
+    if "UnknownTopicOrPartitionException" in stderr:
+        return {
+            "topic_name": topic_name,
+            "service_name": service_name,
+            "deleted": False,
+            "message": "トピックはブローカー上に存在しません",
+            "success": True,
+        }
+
+    log.error("delete_kafka_topic_failed", topic_name=topic_name, service_name=service_name, error=stderr)
+    return {"error": f"トピック削除エラー ({bootstrap}): {stderr or result.stdout.strip()}", "success": False}

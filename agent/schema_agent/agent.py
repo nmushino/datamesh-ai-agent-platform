@@ -10,7 +10,7 @@ from tools.openmetadata import (
     update_column_description,
     create_quality_rule,
 )
-from tools.kafka import create_kafka_topic
+from tools.kafka import create_kafka_topic, delete_kafka_topic
 from tools.github import (
     find_github_files_by_name,
     get_github_file_content,
@@ -27,6 +27,7 @@ SCHEMA_TOOLS = [
     register_topic_metadata,
     register_glossary_term,
     create_kafka_topic,
+    delete_kafka_topic,
     update_column_description,
     create_quality_rule,
     find_github_files_by_name,
@@ -36,7 +37,7 @@ SCHEMA_TOOLS = [
 ]
 
 # 実ブローカーへの書き込みを伴うため承認必須 (orchestrator の human_approval_node で参照)
-APPROVAL_REQUIRED_TOOLS = {"create_kafka_topic"}
+APPROVAL_REQUIRED_TOOLS = {"create_kafka_topic", "delete_kafka_topic"}
 
 
 def create_schema_agent(enable_thinking: bool = False, max_tokens: int = 1024):

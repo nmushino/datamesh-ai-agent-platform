@@ -205,14 +205,20 @@ def _normalize_site_query(tool_name: str, args: dict, user_text: str = "") -> di
 # そのまま実行しようとした)ため、コード側で「直前の会話で既に承認確認を
 # 提示済みかどうか」を判定し、未確認ならツール自体を実行させずに確認メッセージ
 # だけを返す安全策を設ける。
-_CONFIRM_BEFORE_EXECUTE_TOOLS = {"create_kafka_topic"}
+_CONFIRM_BEFORE_EXECUTE_TOOLS = {"create_kafka_topic", "delete_kafka_topic"}
+
+_CONFIRM_ACTION_LABELS = {
+    "create_kafka_topic": "新規作成",
+    "delete_kafka_topic": "削除",
+}
 
 
-def _confirmation_pending_message(tc_args: dict) -> AIMessage:
+def _confirmation_pending_message(tool_name: str, tc_args: dict) -> AIMessage:
     topic = tc_args.get("topic_name", "")
     service = tc_args.get("service_name", "")
+    action = _CONFIRM_ACTION_LABELS.get(tool_name, "変更")
     return AIMessage(content=(
-        f"{service} の実ブローカーに `{topic}` トピックを新規作成します。"
+        f"{service} の実ブローカー上の `{topic}` トピックを{action}します。"
         f"この操作は外部システムへの実際の書き込みを伴うため、承認が必要です。"
         f"よろしければ「承認します」のように返信してください。"
     ))
@@ -369,7 +375,7 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
             None,
         )
         if pending_tc:
-            confirm_message = _confirmation_pending_message(pending_tc["args"])
+            confirm_message = _confirmation_pending_message(pending_tc["name"], pending_tc["args"])
             messages.append(confirm_message)
             new_messages.append(confirm_message)
             # 未確認の書き込みツールはこの応答内では一切実行しない

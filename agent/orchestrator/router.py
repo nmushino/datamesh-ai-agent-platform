@@ -18,8 +18,8 @@ _INTENT_PATTERNS: list[tuple[str, list[str]]] = [
     ("schema_sync", [
         "スキーマ.*同期", "スキーマ.*登録", "スキーマ.*反映",
         "openmetadata.*登録", "テーブル.*登録", "schema.*sync",
-        "トピック.*登録", "トピック.*追加", "トピック.*作成",
-        "topic.*register", "topic.*create",
+        "トピック.*登録", "トピック.*追加", "トピック.*作成", "トピック.*削除",
+        "topic.*register", "topic.*create", "topic.*delete",
     ]),
     ("metadata_update", [
         "説明.*更新", "タグ.*付け", "オーナー.*変更",
