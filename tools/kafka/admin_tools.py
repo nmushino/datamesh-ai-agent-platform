@@ -36,6 +36,20 @@ _SITE_BOOTSTRAP_SERVERS = {
     "external-shop-cluster-kafka-csite:9094": "external-shop-cluster-kafka-csite.quarkusdroneshop-rhdh.svc.cluster.local:9094",
 }
 
+# MirrorMaker2 が各サイト間でトピックを相互ミラーリングしており
+# (topicsPattern: qdca10-in|qdca10pro-in|orders.*|web.*|inventory.*|
+# eighty-six.*|rewards|loyalty-updates.* に一致するトピックが対象)、
+# ミラー先では "shop-<元サイト>.<トピック名>" という名前になる
+# (例: Aサイトの "orders-test" は B/Cサイトでは "shop-asite.orders-test")。
+# 元サイトだけ削除してもMM2が自身のチェックポイントに基づき再同期して
+# 復活してしまうことを実際に確認したため、delete_kafka_topic では
+# 元サイト削除に加えて他サイトのミラーコピーも削除する。
+_SITE_SHORT_NAMES = {
+    "external-shop-cluster-kafka-asite:9094": "asite",
+    "external-shop-cluster-kafka-bsite:9094": "bsite",
+    "external-shop-cluster-kafka-csite:9094": "csite",
+}
+
 # kafka-topics.sh はコマンドごとに JVM を新規起動するため、Pythonクライアント
 # と比べて起動コストが大きい。コンテナのCPU上限を引き上げた後も、バックグラウンド
 # の notification consumer (kafka-python、既知の非互換で再接続を繰り返し続けている)
@@ -128,6 +142,36 @@ def create_kafka_topic(topic_name: str, service_name: str, partitions: int = 1, 
     return {"error": f"トピック作成エラー ({bootstrap}): {stderr or result.stdout.strip()}", "success": False}
 
 
+def _delete_topic_on_broker(bootstrap: str, topic_name: str) -> dict:
+    """指定ブローカー上の指定トピックを削除する内部ヘルパー。
+    topic_name/service_name を含まない結果 dict (deleted/success/message/error) を返す。"""
+    try:
+        result = subprocess.run(
+            [
+                _KAFKA_TOPICS_CMD,
+                "--delete",
+                "--bootstrap-server", bootstrap,
+                "--topic", topic_name,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=_CMD_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return {"error": f"トピック削除エラー ({bootstrap}): コマンドがタイムアウトしました", "success": False}
+    except Exception as e:
+        return {"error": f"トピック削除エラー ({bootstrap}): {str(e)}", "success": False}
+
+    if result.returncode == 0:
+        return {"deleted": True, "success": True}
+
+    stderr = result.stderr.strip()
+    if "UnknownTopicOrPartitionException" in stderr:
+        return {"deleted": False, "message": "トピックはブローカー上に存在しません", "success": True}
+
+    return {"error": f"トピック削除エラー ({bootstrap}): {stderr or result.stdout.strip()}", "success": False}
+
+
 @tool
 def delete_kafka_topic(topic_name: str, service_name: str) -> dict:
     """
@@ -135,6 +179,12 @@ def delete_kafka_topic(topic_name: str, service_name: str) -> dict:
     (この操作はブローカー上のデータを完全に失わせる不可逆な書き込みです。
     OpenMetadata側のメタデータ登録は削除しないため、必要であれば別途
     OpenMetadata側のエントリも整理すること)
+
+    対象トピックが MirrorMaker2 のミラー対象パターンに一致する場合、他サイトに
+    ミラーコピー("shop-<このサイト>.<トピック名>")が存在することがあり、
+    元サイトだけ削除してもMM2のチェックポイントにより再同期されて復活して
+    しまう。そのためこのツールは元サイト削除に続けて、他サイト上のミラー
+    コピーも自動的に削除する。
 
     Args:
         topic_name: 削除するトピック名
@@ -152,43 +202,34 @@ def delete_kafka_topic(topic_name: str, service_name: str) -> dict:
         }
 
     log.info("delete_kafka_topic", topic_name=topic_name, service_name=service_name, bootstrap=bootstrap)
-    try:
-        result = subprocess.run(
-            [
-                _KAFKA_TOPICS_CMD,
-                "--delete",
-                "--bootstrap-server", bootstrap,
-                "--topic", topic_name,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=_CMD_TIMEOUT_SECONDS,
-        )
-    except subprocess.TimeoutExpired:
-        log.error("delete_kafka_topic_failed", topic_name=topic_name, service_name=service_name, error="timeout")
-        return {"error": f"トピック削除エラー ({bootstrap}): コマンドがタイムアウトしました", "success": False}
-    except Exception as e:
-        log.error("delete_kafka_topic_failed", topic_name=topic_name, service_name=service_name, error=str(e))
-        return {"error": f"トピック削除エラー ({bootstrap}): {str(e)}", "success": False}
+    primary = _delete_topic_on_broker(bootstrap, topic_name)
+    if not primary["success"]:
+        log.error("delete_kafka_topic_failed", topic_name=topic_name, service_name=service_name, error=primary.get("error"))
+        return {**primary, "topic_name": topic_name, "service_name": service_name}
 
-    if result.returncode == 0:
-        return {
-            "topic_name": topic_name,
-            "service_name": service_name,
-            "bootstrap_servers": bootstrap,
-            "deleted": True,
-            "success": True,
-        }
+    short_name = _SITE_SHORT_NAMES.get(service_name, service_name)
+    mirror_deletions = []
+    for other_service, other_bootstrap in _SITE_BOOTSTRAP_SERVERS.items():
+        if other_service == service_name:
+            continue
+        mirror_topic = f"shop-{short_name}.{topic_name}"
+        mirror_result = _delete_topic_on_broker(other_bootstrap, mirror_topic)
+        if not mirror_result["success"]:
+            log.error(
+                "delete_kafka_topic_mirror_failed",
+                topic_name=mirror_topic, service_name=other_service, error=mirror_result.get("error"),
+            )
+        mirror_deletions.append({
+            "service_name": other_service,
+            "topic_name": mirror_topic,
+            **mirror_result,
+        })
 
-    stderr = result.stderr.strip()
-    if "UnknownTopicOrPartitionException" in stderr:
-        return {
-            "topic_name": topic_name,
-            "service_name": service_name,
-            "deleted": False,
-            "message": "トピックはブローカー上に存在しません",
-            "success": True,
-        }
-
-    log.error("delete_kafka_topic_failed", topic_name=topic_name, service_name=service_name, error=stderr)
-    return {"error": f"トピック削除エラー ({bootstrap}): {stderr or result.stdout.strip()}", "success": False}
+    return {
+        "topic_name": topic_name,
+        "service_name": service_name,
+        "bootstrap_servers": bootstrap,
+        "deleted": primary["deleted"],
+        "success": True,
+        "mirror_deletions": mirror_deletions,
+    }
