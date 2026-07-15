@@ -90,10 +90,13 @@ spec:
                   key: url
           resources:
             requests:
-              cpu: "250m"
+              cpu: "500m"
               memory: "512Mi"
             limits:
-              cpu: "500m"
+              # kafka-topics.sh (CLI) はツール呼び出しごとにJVMを新規起動するため、
+              # 従来の500mでは実測40秒前後かかっていた。JVM起動を現実的な時間に
+              # 収めるためCPU上限を引き上げる。
+              cpu: "1500m"
               memory: "1Gi"
           livenessProbe:
             httpGet:

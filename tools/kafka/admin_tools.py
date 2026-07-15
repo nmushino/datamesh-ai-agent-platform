@@ -36,7 +36,10 @@ _SITE_BOOTSTRAP_SERVERS = {
     "external-shop-cluster-kafka-csite:9094": "external-shop-cluster-kafka-csite.quarkusdroneshop-rhdh.svc.cluster.local:9094",
 }
 
-_CMD_TIMEOUT_SECONDS = 20
+# kafka-topics.sh はコマンドごとに JVM を新規起動するため、Pythonクライアント
+# と比べて起動コストが大きい。コンテナのCPU制限(500m)下では実測で
+# 40秒前後かかることを確認したため、それに対して十分な余裕を持たせる。
+_CMD_TIMEOUT_SECONDS = 60
 
 
 def list_broker_topics(bootstrap: str) -> set[str]:
