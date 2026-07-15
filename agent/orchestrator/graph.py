@@ -406,9 +406,26 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
 
 
 def intent_classifier_node(state: AgentState) -> dict:
-    last_message = state["messages"][-1]
+    messages = state["messages"]
+    last_message = messages[-1]
     text = last_message.content if hasattr(last_message, "content") else str(last_message)
     intent, matched_pattern = classify_intent_detailed(text)
+
+    # NOTE: create_kafka_topic 等の書き込みツールは、直前のターンで
+    # 「承認が必要です」という確認メッセージを返し、ユーザーの次の返信
+    # (「承認します」等)を待つ2段階フローになっている。しかしその返信の
+    # 文面自体は「トピック」「作成」等のキーワードを含まないことが多く、
+    # キーワードベースのルーターでは intent=unknown -> search_agent に
+    # 誤ルーティングされ、schema_agent 側の承認待ち状態に到達できなかった
+    # (create_kafka_topic が存在しないと誤回答する原因になっていた)。
+    # 直前のAIメッセージが確認待ちプロンプトであれば、キーワード一致に
+    # 関わらず schema_sync に留める。
+    if intent == "unknown" and len(messages) >= 2:
+        prev_ai = messages[-2]
+        prev_text = prev_ai.content if hasattr(prev_ai, "content") else str(prev_ai)
+        if isinstance(prev_text, str) and "承認が必要です" in prev_text:
+            intent, matched_pattern = "schema_sync", "(pending_approval_continuation)"
+
     log.info(
         "intent_classified", intent=intent, matched_pattern=matched_pattern,
         thread_id=state.get("thread_id"),
