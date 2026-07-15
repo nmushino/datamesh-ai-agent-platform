@@ -69,9 +69,9 @@ def test_context_length_error_after_tool_call_shrinks_and_retries(monkeypatch):
     # 生JSONダンプの打ち切り通知ではなく、縮小リトライ後の要約結果が返る。
     assert result[-1].content == summary_message.content
     assert "コンテキスト長の上限を超えたため" not in str(result[-1].content)
-    # 縮小後の max_tokens (8192 - 6000 - 100 = 2092、かつ元の max_tokens 以下)
-    # で get_llm が再度呼ばれている。
-    assert captured_max_tokens[-1] == 2092
+    # 縮小後の max_tokens は本来 8192 - 6000 - 100 = 2092 だが、呼び出し元の
+    # 元々の max_tokens (2048) を超えないよう min() でキャップされる。
+    assert captured_max_tokens[-1] == 2048
 
 
 def test_context_length_error_gives_up_when_messages_already_at_limit(monkeypatch):
