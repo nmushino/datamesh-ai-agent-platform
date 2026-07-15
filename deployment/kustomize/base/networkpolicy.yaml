@@ -71,6 +71,30 @@ spec:
               kubernetes.io/metadata.name: quarkusdroneshop-demo
       ports:
         - port: 9092
+    # Skupper 経由の A/B/C サイト Kafka リスナー (quarkusdroneshop-rhdh namespace)。
+    # 実クラスタには元々このルールが存在していたが git 側に反映されていなかった
+    # ため追加(ライブとgitの差分を解消)。
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: quarkusdroneshop-rhdh
+    # NOTE: Kafka の AdminClient/Producer/Consumer は bootstrap 接続後、各リクエストを
+    # 個別ブローカーの advertised.listeners 先へ直接接続する。A/B/C サイトの external
+    # リスナーは advertised host に AWS ELB の公開ホスト名を使っているため、
+    # Skupper (quarkusdroneshop-rhdh namespace) への egress だけでは
+    # listTopics/createTopics/produce が "waiting for a node assignment" 等で
+    # タイムアウトする。ELB の IP は再割り当てされることがある(過去に実際に
+    # 発生し Skupper リンク断の原因になった)ため、この許可リストは ELB の
+    # IP が変わった際に更新が必要になる点に注意。
+    - to:
+        - ipBlock:
+            cidr: 13.59.244.2/32   # external-shop-cluster-kafka-asite advertised ELB
+        - ipBlock:
+            cidr: 3.136.53.135/32  # external-shop-cluster-kafka-bsite advertised ELB
+        - ipBlock:
+            cidr: 18.188.138.218/32 # external-shop-cluster-kafka-csite advertised ELB
+      ports:
+        - port: 9094
     - to:
         - namespaceSelector:
             matchLabels:
