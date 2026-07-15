@@ -2,26 +2,35 @@
 
 OpenMetadata に登録されている A/B/C サイトの messagingService
 (external-shop-cluster-kafka-Xsite:9094) は、Skupper 経由で
-openmetadata namespace 内にサービスとして公開されている。
+quarkusdroneshop-rhdh namespace 内にサービスとして公開されている。
 OpenMetadata へのメタデータ登録(register_topic_metadata)とは別に、
 このツールで実際のブローカー上にトピックを作成する。
 """
 from __future__ import annotations
 
 import structlog
-from kafka.admin import KafkaAdminClient, NewTopic
-from kafka.errors import TopicAlreadyExistsError
+# librdkafka バインディングの管理クライアント。kafka-python は Kafka 4.x
+# (KRaft) ブローカーの ApiVersions ネゴシエーションと非互換で
+# NodeNotReadyError/NoBrokersAvailable になるため、実ブローカーへの
+# 管理操作 (トピック作成等) はこちらを使う。
+from confluent_kafka import KafkaException as RdKafkaException
+from confluent_kafka.admin import AdminClient as RdKafkaAdminClient
+from confluent_kafka.admin import NewTopic as RdKafkaNewTopic
 from langchain_core.tools import tool
 
 log = structlog.get_logger()
 
-# NOTE: これらのブローカーは ai-agent-orchestrator と別 namespace (openmetadata) で
-# Skupper により公開されているサービスのため、Fully Qualified な
-# クラスタ内DNS名を使う必要がある(同一namespace名のみでは解決できない)。
+# NOTE: これらのブローカーは ai-agent-orchestrator と別 namespace
+# (quarkusdroneshop-rhdh) で Skupper により公開されているサービスのため、
+# Fully Qualified なクラスタ内DNS名を使う必要がある(同一namespace名のみ
+# では解決できない)。以前は openmetadata namespace を指していたが、その
+# Skupper サイトは A/B/C とのリンクが未確立(listener が
+# "Pending / No matching connectors")で常に接続タイムアウトしていたため、
+# 実際にリンクが確立している quarkusdroneshop-rhdh namespace 側に変更した。
 _SITE_BOOTSTRAP_SERVERS = {
-    "external-shop-cluster-kafka-asite:9094": "external-shop-cluster-kafka-asite.openmetadata.svc.cluster.local:9094",
-    "external-shop-cluster-kafka-bsite:9094": "external-shop-cluster-kafka-bsite.openmetadata.svc.cluster.local:9094",
-    "external-shop-cluster-kafka-csite:9094": "external-shop-cluster-kafka-csite.openmetadata.svc.cluster.local:9094",
+    "external-shop-cluster-kafka-asite:9094": "external-shop-cluster-kafka-asite.quarkusdroneshop-rhdh.svc.cluster.local:9094",
+    "external-shop-cluster-kafka-bsite:9094": "external-shop-cluster-kafka-bsite.quarkusdroneshop-rhdh.svc.cluster.local:9094",
+    "external-shop-cluster-kafka-csite:9094": "external-shop-cluster-kafka-csite.quarkusdroneshop-rhdh.svc.cluster.local:9094",
 }
 
 
@@ -51,10 +60,13 @@ def create_kafka_topic(topic_name: str, service_name: str, partitions: int = 1, 
         }
 
     log.info("create_kafka_topic", topic_name=topic_name, service_name=service_name, bootstrap=bootstrap)
-    admin = None
     try:
-        admin = KafkaAdminClient(bootstrap_servers=bootstrap, client_id="ai-agent-topic-admin", request_timeout_ms=10000)
-        admin.create_topics([NewTopic(name=topic_name, num_partitions=partitions, replication_factor=replication_factor)])
+        admin = RdKafkaAdminClient({"bootstrap.servers": bootstrap, "client.id": "ai-agent-topic-admin"})
+        futures = admin.create_topics(
+            [RdKafkaNewTopic(topic_name, num_partitions=partitions, replication_factor=replication_factor)],
+            request_timeout=10,
+        )
+        futures[topic_name].result(timeout=10)
         return {
             "topic_name": topic_name,
             "service_name": service_name,
@@ -62,17 +74,17 @@ def create_kafka_topic(topic_name: str, service_name: str, partitions: int = 1, 
             "created": True,
             "success": True,
         }
-    except TopicAlreadyExistsError:
-        return {
-            "topic_name": topic_name,
-            "service_name": service_name,
-            "created": False,
-            "message": "トピックは既にブローカー上に存在します",
-            "success": True,
-        }
+    except RdKafkaException as e:
+        if e.args and e.args[0].code() == "TOPIC_ALREADY_EXISTS":
+            return {
+                "topic_name": topic_name,
+                "service_name": service_name,
+                "created": False,
+                "message": "トピックは既にブローカー上に存在します",
+                "success": True,
+            }
+        log.error("create_kafka_topic_failed", topic_name=topic_name, service_name=service_name, error=str(e))
+        return {"error": f"トピック作成エラー ({bootstrap}): {str(e)}", "success": False}
     except Exception as e:
         log.error("create_kafka_topic_failed", topic_name=topic_name, service_name=service_name, error=str(e))
         return {"error": f"トピック作成エラー ({bootstrap}): {str(e)}", "success": False}
-    finally:
-        if admin:
-            admin.close()
