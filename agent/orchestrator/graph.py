@@ -610,11 +610,14 @@ def registration_agent_node(state: AgentState) -> dict:
 
 
 def human_approval_node(state: AgentState) -> dict:
-    from langgraph.errors import NodeInterrupt
-    log.info("waiting_for_approval", thread_id=state.get("thread_id"))
-    raise NodeInterrupt(
-        f"承認が必要です。以下の操作を承認してください:\n{state.get('approval_action', '')}"
-    )
+    # NOTE: 実際の一時停止は create_graph() の interrupt_before=["human_approval"]
+    # が担う(承認待ちの間、このノードは実行されない)。/api/v1/approve からの
+    # 再開 (_graph.invoke(None, config)) で初めてこのノード本体が実行されるため、
+    # ここで再度 NodeInterrupt を送出すると再開のたびに再中断してしまい、
+    # invoke() が END まで到達せず None を返す原因になっていた(承認後に
+    # "approve request failed: 500" となるバグ)。承認済みなのでそのまま完了させる。
+    log.info("approval_granted", thread_id=state.get("thread_id"))
+    return {"requires_approval": False}
 
 
 def _check_approval(state: AgentState) -> str:
