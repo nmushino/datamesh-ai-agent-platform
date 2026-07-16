@@ -101,6 +101,63 @@ def _mm2_api_config(site: str) -> tuple[str, str] | None:
     return api_server, token
 
 
+# Skupper経由の外部リスナー(9094)は AWS ELB のIP変動やブローカー再起動直後の
+# 状態不安定などで断続的にタイムアウトすることを実際に何度も確認した。この
+# フォールバックは *-mm2-pause-token の認証情報(mm2-pause-agentサービス
+# アカウント、対象ブローカーPodへの pods/exec のみに絞ったRBAC)を再利用して、
+# 各サイトクラスタのブローカーPodへ直接 exec し、内部リスナー(localhost:9092、
+# Skupperを経由しないため上記の問題の影響を受けない)経由でコマンドを実行する。
+# 現時点でこの認証情報が設定されているのは A/B サイトのみ(Cサイトは
+# RBAC未適用)。
+_BROKER_POD_NAMES = [
+    "shop-cluster-shop-cluster-brokers-0",
+    "shop-cluster-shop-cluster-brokers-1",
+    "shop-cluster-shop-cluster-brokers-2",
+]
+
+
+def _exec_on_broker_pod(site: str, command: list[str]) -> dict:
+    """指定サイトのブローカーPod(先頭から順に生きているものを1つ)に対して
+    pods/exec でコマンドを実行する。Skupper経由の外部リスナーが不安定な場合の
+    フォールバック用。認証情報が無い場合は {"success": False, "unavailable": True}
+    を返す(呼び出し元で「フォールバック自体が使えない」と区別できるようにする)。"""
+    config = _mm2_api_config(site)
+    if config is None:
+        return {"success": False, "unavailable": True, "error": "exec認証情報が未設定"}
+
+    api_server, token = config
+    try:
+        from kubernetes import client as k8s_client
+        from kubernetes.stream import stream as k8s_stream
+    except ImportError as e:
+        return {"success": False, "unavailable": True, "error": f"kubernetesクライアント未導入: {e}"}
+
+    configuration = k8s_client.Configuration()
+    configuration.host = api_server
+    configuration.api_key = {"authorization": f"Bearer {token}"}
+    configuration.verify_ssl = False
+    api_client = k8s_client.ApiClient(configuration)
+    core_v1 = k8s_client.CoreV1Api(api_client)
+
+    last_error = "対象ブローカーPodが見つかりません"
+    for pod_name in _BROKER_POD_NAMES:
+        try:
+            output = k8s_stream(
+                core_v1.connect_get_namespaced_pod_exec,
+                name=pod_name,
+                namespace=_MM2_NAMESPACE,
+                command=command,
+                stderr=True, stdin=False, stdout=True, tty=False,
+                _preload_content=True,
+                _request_timeout=_CMD_TIMEOUT_SECONDS,
+            )
+            return {"success": True, "output": output, "pod": pod_name}
+        except Exception as e:
+            last_error = str(e)
+            continue
+    return {"success": False, "error": last_error}
+
+
 def _set_mm2_pause(site: str, pause: bool) -> dict:
     config = _mm2_api_config(site)
     if config is None:
@@ -232,9 +289,14 @@ def create_kafka_topic(topic_name: str, service_name: str, partitions: int = 1, 
     return {"error": f"トピック作成エラー ({bootstrap}): {stderr or result.stdout.strip()}", "success": False}
 
 
-def _delete_topic_on_broker(bootstrap: str, topic_name: str, timeout_seconds: int = _CMD_TIMEOUT_SECONDS) -> dict:
+def _delete_topic_on_broker(
+    bootstrap: str, topic_name: str, timeout_seconds: int = _CMD_TIMEOUT_SECONDS, site: str | None = None,
+) -> dict:
     """指定ブローカー上の指定トピックを削除する内部ヘルパー。
-    topic_name/service_name を含まない結果 dict (deleted/success/message/error) を返す。"""
+    topic_name/service_name を含まない結果 dict (deleted/success/message/error) を返す。
+    site が指定されていて、Skupper経由の外部リスナー呼び出しがタイムアウトした場合、
+    そのサイトのブローカーPodへ直接execするフォールバックを試す
+    (exec認証情報が無いサイトでは自動的にスキップされる)。"""
     try:
         result = subprocess.run(
             [
@@ -248,6 +310,22 @@ def _delete_topic_on_broker(bootstrap: str, topic_name: str, timeout_seconds: in
             timeout=timeout_seconds,
         )
     except subprocess.TimeoutExpired:
+        if site:
+            log.warning("delete_topic_cli_timeout_falling_back_to_exec", site=site, topic_name=topic_name)
+            push_status(f"外部リスナー経由の削除がタイムアウトしたため、{site}のブローカーPodへ直接接続して再試行しています...")
+            exec_result = _exec_on_broker_pod(
+                site,
+                [_KAFKA_TOPICS_CMD, "--delete", "--bootstrap-server", "localhost:9092", "--topic", topic_name],
+            )
+            if exec_result.get("success"):
+                output = exec_result.get("output", "")
+                if "UnknownTopicOrPartitionException" in output:
+                    return {"deleted": False, "message": "トピックはブローカー上に存在しません", "success": True}
+                if "Error" in output:
+                    return {"error": f"トピック削除エラー (exec/{site}): {output}", "success": False}
+                return {"deleted": True, "success": True, "via": "exec"}
+            if not exec_result.get("unavailable"):
+                return {"error": f"トピック削除エラー (exec/{site}): {exec_result.get('error')}", "success": False}
         return {"error": f"トピック削除エラー ({bootstrap}): コマンドがタイムアウトしました", "success": False}
     except Exception as e:
         return {"error": f"トピック削除エラー ({bootstrap}): {str(e)}", "success": False}
@@ -300,20 +378,26 @@ def delete_kafka_topic(topic_name: str, service_name: str) -> dict:
     # 実際に停止させるまでには数秒のラグがあるため、削除実行前に少し待つ。
     time.sleep(5)
 
+    short_name = _SITE_SHORT_NAMES.get(service_name, service_name)
+
     try:
         push_status("delete_kafka_topic を実行しています...")
-        primary = _delete_topic_on_broker(bootstrap, topic_name, timeout_seconds=_PRIMARY_DELETE_TIMEOUT_SECONDS)
+        primary = _delete_topic_on_broker(
+            bootstrap, topic_name, timeout_seconds=_PRIMARY_DELETE_TIMEOUT_SECONDS, site=short_name,
+        )
         if not primary["success"]:
             log.error("delete_kafka_topic_failed", topic_name=topic_name, service_name=service_name, error=primary.get("error"))
             return {**primary, "topic_name": topic_name, "service_name": service_name, "mm2_pause_results": mm2_pause_results}
 
-        short_name = _SITE_SHORT_NAMES.get(service_name, service_name)
         mirror_deletions = []
         for other_service, other_bootstrap in _SITE_BOOTSTRAP_SERVERS.items():
             if other_service == service_name:
                 continue
+            other_short_name = _SITE_SHORT_NAMES.get(other_service, other_service)
             mirror_topic = f"shop-{short_name}.{topic_name}"
-            mirror_result = _delete_topic_on_broker(other_bootstrap, mirror_topic, timeout_seconds=_MIRROR_DELETE_TIMEOUT_SECONDS)
+            mirror_result = _delete_topic_on_broker(
+                other_bootstrap, mirror_topic, timeout_seconds=_MIRROR_DELETE_TIMEOUT_SECONDS, site=other_short_name,
+            )
             if not mirror_result["success"]:
                 log.error(
                     "delete_kafka_topic_mirror_failed",

@@ -5,6 +5,11 @@ httpx==0.27.0
 # は使わず、コンテナイメージに同梱した kafka-topics.sh / kafka-console-consumer.sh
 # (CLI) を subprocess 経由で呼び出す
 # (tools/kafka/admin_tools.py, agent/orchestrator/notifications.py 参照)。
+# Skupper経由の外部リスナー(9094)が不安定な場合のフォールバックとして、各サイト
+# クラスタのブローカーPodへ直接 pods/exec するために使う(kubernetes exec
+# サブリソースは WebSocket/SPDYベースのプロトコルで、httpxの単純なREST呼び出し
+# では実装できないため、公式クライアントを使う)。
+kubernetes==30.1.0
 langchain-core==0.2.40
 langchain-openai==0.1.25
 openmetadata-ingestion==1.3.0
