@@ -709,7 +709,17 @@ def human_approval_node(state: AgentState) -> dict:
     # invoke() が END まで到達せず None を返す原因になっていた(承認後に
     # "approve request failed: 500" となるバグ)。承認済みなのでそのまま完了させる。
     log.info("approval_granted", thread_id=state.get("thread_id"))
-    return {"requires_approval": False}
+    # NOTE: ChatUIの承認ボタン経由の再開では、チャットで「承認します」と
+    # 返信する経路と違って新規のHumanMessageが一切追加されない。そのため
+    # schema_agent_node/registration_agent_node に戻った際、LLMからは
+    # 「直前のメッセージが自分自身(確認プロンプト)のまま」に見え、実行すべき
+    # 指示が無いと判断して確認プロンプトを再度繰り返すだけになり、ツールが
+    # 一切呼ばれない不具合を実際に確認した。チャット返信の経路と同じ「明確な
+    # 承認の指示」をLLMに与えるため、合成のHumanMessageを追加する。
+    return {
+        "requires_approval": False,
+        "messages": [HumanMessage(content="承認します。実行してください。")],
+    }
 
 
 def _check_approval(state: AgentState) -> str:
