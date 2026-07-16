@@ -96,9 +96,9 @@ spec:
         - ipBlock:
             cidr: 18.117.213.10/32  # external-shop-cluster-kafka-bsite advertised ELB (AZ2)
         - ipBlock:
-            cidr: 18.188.138.218/32 # external-shop-cluster-kafka-csite advertised ELB (AZ1)
+            cidr: 3.141.248.102/32  # external-shop-cluster-kafka-csite advertised ELB (AZ1、csite再構築(sandbox850)後の新IP)
         - ipBlock:
-            cidr: 3.132.44.216/32   # external-shop-cluster-kafka-csite advertised ELB (AZ2)
+            cidr: 13.59.243.104/32  # external-shop-cluster-kafka-csite advertised ELB (AZ2、csite再構築(sandbox850)後の新IP)
       ports:
         - port: 9094
     # A/B/C サイト自身の Kubernetes API サーバーへの egress。delete_kafka_topic が
