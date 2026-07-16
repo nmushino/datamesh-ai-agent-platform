@@ -64,6 +64,13 @@ _CMD_TIMEOUT_SECONDS = 90
 # 即座に返る想定の操作のため、通常の削除より短いタイムアウトでよい。
 _MIRROR_DELETE_TIMEOUT_SECONDS = 15
 
+# delete_kafka_topic は MM2一時停止(約5秒待機)+ 元サイト削除 + ミラー削除
+# (最大2サイト) + MM2再開までの保持時間を直列に行うため、全体の所要時間が
+# 積み上がりやすい。ChatUI〜vLLM間のどこかでHTTPタイムアウトに達するリスクを
+# 抑えるため、元サイト削除には汎用の _CMD_TIMEOUT_SECONDS (90秒、JVM起動が
+# 遅い場合の余裕を見た値) より短いタイムアウトを個別に設定する。
+_PRIMARY_DELETE_TIMEOUT_SECONDS = 45
+
 # MM2は自身の内部チェックポイント(config/offset storageトピック)を基に
 # トピックを再作成することがあり、ミラー先を削除してもソース側の現状に
 # 関わらず復活してしまうことを実際に確認した(A/B/Cのミラーを何度削除しても
@@ -76,6 +83,10 @@ _MM2_SITES = ["asite", "bsite", "csite"]
 _MM2_RESOURCE_NAME = "mm2-extended"
 _MM2_NAMESPACE = "quarkusdroneshop-demo"
 _MM2_API_TIMEOUT_SECONDS = 15
+# 削除完了後、MM2を再開するまで一時停止状態を維持する時間。短すぎると
+# 再開直後の最初の調整サイクルで内部チェックポイントからトピックが
+# 再作成されてしまう事例を確認したため、ある程度の余裕を持たせる。
+_MM2_PAUSE_HOLD_SECONDS = 60
 
 
 def _mm2_api_config(site: str) -> tuple[str, str] | None:
@@ -287,7 +298,7 @@ def delete_kafka_topic(topic_name: str, service_name: str) -> dict:
     time.sleep(5)
 
     try:
-        primary = _delete_topic_on_broker(bootstrap, topic_name)
+        primary = _delete_topic_on_broker(bootstrap, topic_name, timeout_seconds=_PRIMARY_DELETE_TIMEOUT_SECONDS)
         if not primary["success"]:
             log.error("delete_kafka_topic_failed", topic_name=topic_name, service_name=service_name, error=primary.get("error"))
             return {**primary, "topic_name": topic_name, "service_name": service_name, "mm2_pause_results": mm2_pause_results}
@@ -309,6 +320,13 @@ def delete_kafka_topic(topic_name: str, service_name: str) -> dict:
                 "topic_name": mirror_topic,
                 **mirror_result,
             })
+
+        # NOTE: MM2 は一時停止中も自身の内部チェックポイント(mirrormaker2-cluster-
+        # offsets 等)にトピックの存在を記憶しており、削除直後に再開すると
+        # そのチェックポイントに基づいて再作成してしまうことを実際に確認した。
+        # 一時停止状態をしばらく維持することで、Strimzi Operator/Kafka Connect
+        # フレームワーク側の状態がより落ち着いてから再開されるようにする。
+        time.sleep(_MM2_PAUSE_HOLD_SECONDS)
     finally:
         mm2_resume_results = _resume_all_mm2()
 
