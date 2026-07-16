@@ -1,4 +1,3 @@
-import contextvars
 import json
 import re
 import structlog
@@ -11,6 +10,7 @@ from agent.orchestrator.router import classify_intent_detailed, route_to_agent
 from agent.schema_agent.agent import SCHEMA_TOOLS, SYSTEM_PROMPT as SCHEMA_SYSTEM_PROMPT
 from agent.search_agent.agent import SEARCH_TOOLS, SYSTEM_PROMPT as SEARCH_SYSTEM_PROMPT
 from agent.registration_agent.agent import REGISTRATION_TOOLS, SYSTEM_PROMPT as REGISTRATION_SYSTEM_PROMPT
+from tools.common.status import status_queue_var
 
 log = structlog.get_logger()
 
@@ -67,13 +67,9 @@ def _recent_messages(state: AgentState) -> list:
 
 
 # NOTE: config["configurable"] 経由で status キューを渡そうとしたが、
-# PostgresSaver チェックポインタ付きでコンパイルしたグラフでは
-# configurable がチェックポインタの識別キー以外を除去してしまい、
-# ノード関数まで届かないことが判明した (contextvars ならスレッド内の
-# 呼び出しスタックに伝播するため、チェックポインタの介在を受けない)。
-_status_queue_var: contextvars.ContextVar = contextvars.ContextVar(
-    "status_queue", default=None
-)
+# tools/common/status.py 参照。個々のツール実装 (tools/*) からも同じ
+# contextvar 経由で細かい進捗を通知できるよう、下位モジュールに定義を移した。
+_status_queue_var = status_queue_var
 
 # ツール名 -> 検索中表示用の日本語ラベル (「意図を判定しています」だけでは
 # 何をしているか分からないという要望を受け、サブエージェント内のツール
@@ -88,6 +84,11 @@ _TOOL_STATUS_LABELS = {
     "register_table_metadata": "テーブルメタデータを登録しています...",
     "register_topic_metadata": "Kafkaトピックのメタデータを登録しています...",
     "create_kafka_topic":     "対象サイトの実ブローカーにトピックを作成しています...",
+    # delete_kafka_topic はここで一括の初期ラベルを出した後、MM2一時停止/実削除/
+    # MM2再開の各段階で tools/kafka/admin_tools.py 側からも push_status() で
+    # 細かい進捗を追加通知する(MM2停止 → delete_kafka_topic を実行しています... →
+    # MM2再開、の順で表示される)。
+    "delete_kafka_topic":     "対象サイトの実ブローカーのトピック削除を準備しています...",
     "update_column_description": "カラムの説明を更新しています...",
     "get_data_lineage":       "データリネージを辿っています...",
     "get_quality_metrics":    "データ品質メトリクスを取得しています...",

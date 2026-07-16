@@ -22,6 +22,8 @@ import httpx
 import structlog
 from langchain_core.tools import tool
 
+from tools.common.status import push_status
+
 log = structlog.get_logger()
 
 _KAFKA_TOPICS_CMD = "kafka-topics.sh"
@@ -292,12 +294,14 @@ def delete_kafka_topic(topic_name: str, service_name: str) -> dict:
 
     log.info("delete_kafka_topic", topic_name=topic_name, service_name=service_name, bootstrap=bootstrap)
 
+    push_status("MM2の停止")
     mm2_pause_results = _pause_all_mm2()
     # NOTE: 一時停止のAPI呼び出しが返っても、Strimzi Operator がConnectタスクを
     # 実際に停止させるまでには数秒のラグがあるため、削除実行前に少し待つ。
     time.sleep(5)
 
     try:
+        push_status("delete_kafka_topic を実行しています...")
         primary = _delete_topic_on_broker(bootstrap, topic_name, timeout_seconds=_PRIMARY_DELETE_TIMEOUT_SECONDS)
         if not primary["success"]:
             log.error("delete_kafka_topic_failed", topic_name=topic_name, service_name=service_name, error=primary.get("error"))
@@ -328,6 +332,7 @@ def delete_kafka_topic(topic_name: str, service_name: str) -> dict:
         # フレームワーク側の状態がより落ち着いてから再開されるようにする。
         time.sleep(_MM2_PAUSE_HOLD_SECONDS)
     finally:
+        push_status("MM2の再開")
         mm2_resume_results = _resume_all_mm2()
 
     return {
