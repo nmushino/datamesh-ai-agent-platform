@@ -372,7 +372,13 @@ def _delete_topic_via_cli(bootstrap: str, topic_name: str, timeout_seconds: int)
         return {"deleted": True, "success": True}
 
     stderr = result.stderr.strip()
-    if "UnknownTopicOrPartitionException" in stderr:
+    # NOTE: 「トピックが存在しない」ことを表すエラー文言は kafka-topics.sh の
+    # バージョンによって異なる。UnknownTopicOrPartitionException だけでなく、
+    # このクラスタでは "IllegalArgumentException: Topic '...' does not exist
+    # as expected" という文言で返ってくることを実際に確認した(CR削除で既に
+    # 消えているトピックへの確認削除がこの文言でエラー扱いになり、実際には
+    # 正常なケースが失敗として報告される不具合があった)。
+    if "UnknownTopicOrPartitionException" in stderr or "does not exist" in stderr:
         return {"deleted": False, "message": "トピックはブローカー上に存在しません", "success": True}
 
     return {"error": f"トピック削除エラー ({bootstrap}): {stderr or result.stdout.strip()}", "success": False}
