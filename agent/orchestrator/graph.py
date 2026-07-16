@@ -573,15 +573,26 @@ def schema_agent_node(state: AgentState) -> dict:
     log.info("schema_agent_invoked", thread_id=state.get("thread_id"))
     input_messages = _recent_messages(state)
 
-    # このターンが「承認済みなので実行するはず」のターンかどうかを、直前の
-    # AIメッセージに確認プロンプト(「承認」を含む)があるかで判定しておく。
-    # チャットでの「承認します」返信 (確認AIメッセージが末尾から2番目) と、
-    # ChatUIの承認ボタン経由の再開 (新規ユーザーメッセージが追加されず、
-    # 確認AIメッセージがそのまま末尾になる) の両方をカバーするため、
-    # 直近3件のいずれかをチェックする。
-    prior_ai_pending_approval = any(
-        isinstance(m, AIMessage) and isinstance(m.content, str) and "承認" in m.content
-        for m in input_messages[-3:]
+    # このターンが「承認済みなので実行するはず」のターンかどうかを判定する。
+    # 「直近数件のいずれかに"承認"を含む」という緩い判定では、この会話スレッド
+    # のように過去に何度も確認プロンプトが出ているケースで、無関係な新規の
+    # 削除依頼(まだ一度も確認していない1ターン目)まで誤検知してしまうことを
+    # 実際に確認した(過去の"承認"文言が残り続け、正当な初回確認プロンプトの
+    # 応答を「実行するはずだったのに実行されなかった」と誤判定し、その結果
+    # 差し替えた汎用エラーメッセージが会話履歴を汚染して本来の承認フローまで
+    # 壊してしまった)。承認直後のターンだけを厳密に特定するため、位置を固定する:
+    # (a) チャットでの「承認します」返信: 末尾がHumanMessage、その直前のAI
+    #     メッセージが確認プロンプト(「承認」を含む)
+    # (b) ChatUIの承認ボタン経由の再開: 新規ユーザーメッセージが追加されず、
+    #     確認プロンプトのAIメッセージがそのまま末尾になる
+    def _is_confirm_ai_message(m) -> bool:
+        return isinstance(m, AIMessage) and isinstance(m.content, str) and "承認" in m.content
+
+    last_input = input_messages[-1] if input_messages else None
+    second_last_input = input_messages[-2] if len(input_messages) >= 2 else None
+    prior_ai_pending_approval = (
+        (isinstance(last_input, HumanMessage) and _is_confirm_ai_message(second_last_input))
+        or _is_confirm_ai_message(last_input)
     )
 
     new_messages = _invoke_subagent_ensured(
