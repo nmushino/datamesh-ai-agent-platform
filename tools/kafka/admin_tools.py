@@ -218,13 +218,26 @@ def _exclude_topic_from_pattern(pattern: str, topic_name: str) -> str:
     return exclusion + pattern
 
 
-def _exclude_topic_on_mm2(site: str, source_cluster_alias: str, topic_name: str) -> dict:
-    """<site> の KafkaMirrorMaker2 リソースについて、sourceCluster が
-    source_cluster_alias と一致する mirrors エントリの topicsPattern から
-    topic_name を除外する。MM2は自身の内部チェックポイントに基づいてトピックを
-    再作成することがあり(削除直後にMM2を再開すると復活する事例を確認済み)、
-    その根本原因(再照合対象のパターンに一致し続けている)を解消する唯一の
-    安全な方法として、削除の都度このパターン自体を更新する。
+def _mirror_matches_source(mirror: dict, source_cluster_alias: str, source_service_name: str) -> bool:
+    """mirrors[] の1エントリが、削除元サイトを sourceCluster としているかを判定する。
+    実際のライブリソースを確認したところ、想定していた spec.mirrors[].sourceCluster
+    フィールドを持たない構成(sourceConnector.config.bootstrap.servers に直接
+    ブローカーアドレスを埋め込む形式)のサイトが存在することが分かった
+    (このフィールド不一致により、除外パターンが一切適用されない不具合が
+    発生していた)。両方の構成に対応するため、どちらの手掛かりでも判定する。"""
+    if mirror.get("sourceCluster") == source_cluster_alias:
+        return True
+    bootstrap_servers = mirror.get("sourceConnector", {}).get("config", {}).get("bootstrap.servers", "")
+    return bootstrap_servers == source_service_name
+
+
+def _exclude_topic_on_mm2(site: str, source_cluster_alias: str, source_service_name: str, topic_name: str) -> dict:
+    """<site> の KafkaMirrorMaker2 リソースについて、削除元サイトを sourceCluster
+    とする mirrors エントリの topicsPattern から topic_name を除外する。
+    MM2は自身の内部チェックポイントに基づいてトピックを再作成することがあり
+    (削除直後にMM2を再開すると復活する事例を確認済み)、その根本原因(再照合
+    対象のパターンに一致し続けていること)を解消する唯一の安全な方法として、
+    削除の都度このパターン自体を更新する。
     (spec.mirrors はK8s側でリスト全体を置き換える必要があるため、まずGETで
     現在の全エントリを取得し、対象エントリだけを書き換えて丸ごとPATCHし直す。)"""
     config = _mm2_api_config(site)
@@ -244,7 +257,7 @@ def _exclude_topic_on_mm2(site: str, source_cluster_alias: str, topic_name: str)
 
         changed = False
         for mirror in mirrors:
-            if mirror.get("sourceCluster") != source_cluster_alias:
+            if not _mirror_matches_source(mirror, source_cluster_alias, source_service_name):
                 continue
             current_pattern = mirror.get("topicsPattern", "")
             new_pattern = _exclude_topic_from_pattern(current_pattern, topic_name)
@@ -503,7 +516,7 @@ def delete_kafka_topic(topic_name: str, service_name: str) -> dict:
         push_status("MM2の除外パターンを更新しています...")
         source_cluster_alias = f"shop-{short_name}"
         pattern_exclusions = [
-            _exclude_topic_on_mm2(other_short, source_cluster_alias, topic_name)
+            _exclude_topic_on_mm2(other_short, source_cluster_alias, service_name, topic_name)
             for other_short in _MM2_SITES
             if other_short != short_name
         ]
