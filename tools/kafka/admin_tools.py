@@ -405,6 +405,15 @@ def _delete_topic_on_broker(
     result = _delete_topic_via_cli(bootstrap, topic_name, timeout_seconds)
     if cr_result is not None:
         result["kafkatopic_cr"] = cr_result
+        # NOTE: CR削除で既に実トピックが消えている場合、後続のCLI削除は
+        # 「元々存在しない」という結果を返す(それ自体は正しい)。しかしそれを
+        # そのまま最終結果にすると、CR削除でAgentが実際に削除を行ったという
+        # 事実が「削除失敗(存在しなかった)」という誤解を招く表示になって
+        # しまう(実際に問い合わせを受けて確認した不具合)。CR削除で削除済み
+        # なら deleted=True で上書きする。
+        if cr_result.get("deleted") and not result.get("deleted"):
+            result["deleted"] = True
+            result["message"] = "KafkaTopic CR削除により削除されました"
     return result
 
 
