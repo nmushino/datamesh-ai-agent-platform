@@ -91,6 +91,7 @@ def _mm2_api_config(site: str) -> tuple[str, str] | None:
 def _set_mm2_pause(site: str, pause: bool) -> dict:
     config = _mm2_api_config(site)
     if config is None:
+        log.warning("mm2_pause_skipped", site=site, pause=pause, reason="credentials not set")
         return {"site": site, "skipped": True, "reason": "MM2 API 認証情報が未設定", "success": True}
 
     api_server, token = config
@@ -101,7 +102,11 @@ def _set_mm2_pause(site: str, pause: bool) -> dict:
     try:
         resp = httpx.patch(
             url,
-            json={"spec": {"pause": pause}},
+            # NOTE: Strimzi の KafkaMirrorMaker2 に spec.pause フィールドは存在しない
+            # (CRDスキーマに無く、当初 spec.pause で PATCH したが無視されて何も
+            # 効果がないことを実際に確認した)。Strimzi はどのカスタムリソースも
+            # 共通で strimzi.io/pause-reconciliation アノテーションで一時停止する。
+            json={"metadata": {"annotations": {"strimzi.io/pause-reconciliation": "true" if pause else "false"}}},
             headers={
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/merge-patch+json",
@@ -114,6 +119,7 @@ def _set_mm2_pause(site: str, pause: bool) -> dict:
             timeout=_MM2_API_TIMEOUT_SECONDS,
         )
         resp.raise_for_status()
+        log.info("mm2_pause_set", site=site, pause=pause)
         return {"site": site, "paused": pause, "success": True}
     except Exception as e:
         log.error("mm2_pause_failed", site=site, pause=pause, error=str(e))
