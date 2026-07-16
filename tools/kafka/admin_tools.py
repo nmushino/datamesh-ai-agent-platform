@@ -101,63 +101,6 @@ def _mm2_api_config(site: str) -> tuple[str, str] | None:
     return api_server, token
 
 
-# Skupper経由の外部リスナー(9094)は AWS ELB のIP変動やブローカー再起動直後の
-# 状態不安定などで断続的にタイムアウトすることを実際に何度も確認した。この
-# フォールバックは *-mm2-pause-token の認証情報(mm2-pause-agentサービス
-# アカウント、対象ブローカーPodへの pods/exec のみに絞ったRBAC)を再利用して、
-# 各サイトクラスタのブローカーPodへ直接 exec し、内部リスナー(localhost:9092、
-# Skupperを経由しないため上記の問題の影響を受けない)経由でコマンドを実行する。
-# 現時点でこの認証情報が設定されているのは A/B サイトのみ(Cサイトは
-# RBAC未適用)。
-_BROKER_POD_NAMES = [
-    "shop-cluster-shop-cluster-brokers-0",
-    "shop-cluster-shop-cluster-brokers-1",
-    "shop-cluster-shop-cluster-brokers-2",
-]
-
-
-def _exec_on_broker_pod(site: str, command: list[str]) -> dict:
-    """指定サイトのブローカーPod(先頭から順に生きているものを1つ)に対して
-    pods/exec でコマンドを実行する。Skupper経由の外部リスナーが不安定な場合の
-    フォールバック用。認証情報が無い場合は {"success": False, "unavailable": True}
-    を返す(呼び出し元で「フォールバック自体が使えない」と区別できるようにする)。"""
-    config = _mm2_api_config(site)
-    if config is None:
-        return {"success": False, "unavailable": True, "error": "exec認証情報が未設定"}
-
-    api_server, token = config
-    try:
-        from kubernetes import client as k8s_client
-        from kubernetes.stream import stream as k8s_stream
-    except ImportError as e:
-        return {"success": False, "unavailable": True, "error": f"kubernetesクライアント未導入: {e}"}
-
-    configuration = k8s_client.Configuration()
-    configuration.host = api_server
-    configuration.api_key = {"authorization": f"Bearer {token}"}
-    configuration.verify_ssl = False
-    api_client = k8s_client.ApiClient(configuration)
-    core_v1 = k8s_client.CoreV1Api(api_client)
-
-    last_error = "対象ブローカーPodが見つかりません"
-    for pod_name in _BROKER_POD_NAMES:
-        try:
-            output = k8s_stream(
-                core_v1.connect_get_namespaced_pod_exec,
-                name=pod_name,
-                namespace=_MM2_NAMESPACE,
-                command=command,
-                stderr=True, stdin=False, stdout=True, tty=False,
-                _preload_content=True,
-                _request_timeout=_CMD_TIMEOUT_SECONDS,
-            )
-            return {"success": True, "output": output, "pod": pod_name}
-        except Exception as e:
-            last_error = str(e)
-            continue
-    return {"success": False, "error": last_error}
-
-
 def _set_mm2_pause(site: str, pause: bool) -> dict:
     config = _mm2_api_config(site)
     if config is None:
@@ -199,7 +142,7 @@ def _set_mm2_pause(site: str, pause: bool) -> dict:
 def _delete_kafkatopic_cr(site: str, topic_name: str) -> dict:
     """<site> の KafkaTopic カスタムリソース(Strimzi Topic Operator管理)を削除する。
     Topic Operator は KafkaTopic CR を正とみなし、ブローカー上のトピックが
-    (execやCLIで直接)削除されてもCRが残っていれば実トピックを再作成して
+    CLIで直接削除されてもCRが残っていれば実トピックを再作成して
     しまうことを実際に確認した(Aサイトの orders-test が原因不明のまま
     復活し続けていた真因)。ブローカー上の削除だけでは不十分で、対応する
     KafkaTopic CRの削除が必須。認証情報が無い場合はスキップ(現時点ではCサイト)。"""
@@ -406,7 +349,8 @@ _SITE_DISPLAY_NAMES = {"asite": "Aサイト", "bsite": "Bサイト", "csite": "C
 
 def _delete_topic_via_cli(bootstrap: str, topic_name: str, timeout_seconds: int) -> dict:
     """Skupper経由の外部リスナー(9094)に対して kafka-topics.sh --delete を実行する。
-    exec認証情報が無いサイト(現時点ではCサイト)向けのフォールバックとしてのみ使う。"""
+    site指定時はKafkaTopic CR削除(実削除の主経路)後の確認/フォールバックとして、
+    site未指定時(ミラー等)は唯一の削除経路として使う。"""
     try:
         result = subprocess.run(
             [
@@ -440,45 +384,28 @@ def _delete_topic_on_broker(
     """指定ブローカー上の指定トピックを削除する内部ヘルパー。
     topic_name/service_name を含まない結果 dict (deleted/success/message/error) を返す。
 
-    Skupper経由の外部リスナー(9094)は AWS ELB のIP変動やブローカー再起動直後の
-    状態不安定などで断続的にタイムアウトすることを実際に何度も確認したため、
-    site が指定されている場合は常にブローカーPodへの直接exec (内部リスナー
-    localhost:9092、Skupperを経由しないため上記の問題の影響を受けない) を
-    優先する。exec認証情報が設定されていないサイト(現時点ではCサイト)でのみ、
-    従来のSkupper経由CLI呼び出しにフォールバックする。"""
+    NOTE: Strimzi Topic Operator が KafkaTopic CR を正として管理しており、
+    ブローカー上のトピックをCLIで直接削除しても、対応するCRが残っていれば
+    Operatorが実トピックを再作成してしまうことを確認した(Aサイトの
+    orders-test が原因不明のまま復活し続けていた真因)。そのため site が
+    指定されている場合は、Skupper経由CLI削除より先にKafkaTopic CRを削除する
+    (Operatorのfinalizer経由の削除が実トピック削除の主経路となり、後続の
+    CLI削除は既に消えている前提のフォールバック/確認として働く)。"""
     display_name = _SITE_DISPLAY_NAMES.get(site, site or "")
+    cr_result = None
     if site:
         push_status(f"{display_name}処理中...")
-        # NOTE: Strimzi Topic Operator が KafkaTopic CR を正として管理しており、
-        # ブローカー上のトピックをexec/CLIで直接削除しても、対応するCRが
-        # 残っていればOperatorが実トピックを再作成してしまうことを確認した。
-        # ブローカー削除より先にCRを削除する(Operatorのfinalizer経由の削除が
-        # 実トピック削除の主経路となり、後続のブローカー削除は既に消えている
-        # 前提のフォールバック/確認として働く)。
         cr_result = _delete_kafkatopic_cr(site, topic_name)
         if not cr_result["success"]:
             log.warning("kafkatopic_cr_delete_failed_continuing", site=site, topic_name=topic_name, error=cr_result.get("error"))
         if cr_result.get("deleted"):
             # Topic Operator がfinalizer経由で実トピックを削除し終えるまで一呼吸置く。
             time.sleep(3)
-        exec_result = _exec_on_broker_pod(
-            site,
-            [_KAFKA_TOPICS_CMD, "--delete", "--bootstrap-server", "localhost:9092", "--topic", topic_name],
-        )
-        if exec_result.get("success"):
-            output = exec_result.get("output", "")
-            if "UnknownTopicOrPartitionException" in output:
-                return {"deleted": bool(cr_result.get("deleted")), "message": "トピックはブローカー上に存在しません", "success": True, "kafkatopic_cr": cr_result}
-            if "Error" in output:
-                return {"error": f"トピック削除エラー (exec/{site}): {output}", "success": False, "kafkatopic_cr": cr_result}
-            return {"deleted": True, "success": True, "via": "exec", "kafkatopic_cr": cr_result}
-        if not exec_result.get("unavailable"):
-            return {"error": f"トピック削除エラー (exec/{site}): {exec_result.get('error')}", "success": False, "kafkatopic_cr": cr_result}
-        # exec認証情報が無いサイト(現時点ではCサイト)のみ、ここから下のSkupper
-        # 経由CLIフォールバックに進む。
-        log.warning("delete_topic_exec_unavailable_falling_back_to_cli", site=site, topic_name=topic_name)
 
-    return _delete_topic_via_cli(bootstrap, topic_name, timeout_seconds)
+    result = _delete_topic_via_cli(bootstrap, topic_name, timeout_seconds)
+    if cr_result is not None:
+        result["kafkatopic_cr"] = cr_result
+    return result
 
 
 @tool
