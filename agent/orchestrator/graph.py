@@ -566,15 +566,52 @@ def _clamp_tool_agent_max_tokens(requested_max_tokens: int) -> int:
     return min(requested_max_tokens, _TOOL_AGENT_MAX_TOKENS_CAP)
 
 
+_WRITE_TOOL_NAMES_SCHEMA = {"create_kafka_topic", "delete_kafka_topic"}
+
+
 def schema_agent_node(state: AgentState) -> dict:
     log.info("schema_agent_invoked", thread_id=state.get("thread_id"))
     input_messages = _recent_messages(state)
+
+    # このターンが「承認済みなので実行するはず」のターンかどうかを、直前の
+    # AIメッセージに確認プロンプト(「承認」を含む)があるかで判定しておく。
+    # チャットでの「承認します」返信 (確認AIメッセージが末尾から2番目) と、
+    # ChatUIの承認ボタン経由の再開 (新規ユーザーメッセージが追加されず、
+    # 確認AIメッセージがそのまま末尾になる) の両方をカバーするため、
+    # 直近3件のいずれかをチェックする。
+    prior_ai_pending_approval = any(
+        isinstance(m, AIMessage) and isinstance(m.content, str) and "承認" in m.content
+        for m in input_messages[-3:]
+    )
+
     new_messages = _invoke_subagent_ensured(
         "schema",
         state.get("enable_thinking", False),
         _clamp_tool_agent_max_tokens(state.get("max_tokens", 1024)),
         input_messages,
     )
+
+    # NOTE: 承認後のターンで、LLMが実際には create_kafka_topic/delete_kafka_topic を
+    # 一切呼び出さないまま「削除に成功しました」等の文章を生成してしまう
+    # (ツール呼び出しを伴わない完全な作り話)ことを実際に確認した。承認済み
+    # ターンであるにも関わらず対応する ToolMessage が new_messages に一つも
+    # 無い場合、LLMの自己申告を信用せず明示的なエラーメッセージに差し替える。
+    if prior_ai_pending_approval:
+        wrote_via_tool = any(
+            isinstance(m, ToolMessage) and m.name in _WRITE_TOOL_NAMES_SCHEMA
+            for m in new_messages
+        )
+        if not wrote_via_tool:
+            log.error(
+                "schema_agent_hallucinated_success",
+                thread_id=state.get("thread_id"),
+                reply_preview=str(new_messages[-1].content)[:200],
+            )
+            new_messages = [AIMessage(content=(
+                "承認を受け取りましたが、実際のツール呼び出しが行われなかったため、"
+                "操作は実行されていません。恐れ入りますが、もう一度削除/作成のご依頼を"
+                "最初からやり直してください。"
+            ))]
 
     # 承認フラグの検出（レスポンスに「承認」キーワードが含まれるか）。
     # create_kafka_topic は実際の外部ブローカーへの書き込みを伴うため、
