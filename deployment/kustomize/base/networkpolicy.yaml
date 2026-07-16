@@ -125,7 +125,11 @@ spec:
         - ipBlock:
             cidr: 18.223.39.51/32    # B-site API server (3つ目のDNS解決先)
         - ipBlock:
-            cidr: 18.226.195.149/32  # C-site API server (api.ocp.nbg84.sandbox2422.opentlc.com、現在到達不能)
+            cidr: 18.226.224.118/32  # C-site API server (api.ocp.44gnd.sandbox850.opentlc.com、csite再構築後)
+        - ipBlock:
+            cidr: 18.119.181.89/32   # C-site API server (2つ目のDNS解決先)
+        - ipBlock:
+            cidr: 3.128.135.120/32   # C-site API server (3つ目のDNS解決先)
       ports:
         - port: 6443
     - to:
