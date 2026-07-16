@@ -289,14 +289,12 @@ def create_kafka_topic(topic_name: str, service_name: str, partitions: int = 1, 
     return {"error": f"トピック作成エラー ({bootstrap}): {stderr or result.stdout.strip()}", "success": False}
 
 
-def _delete_topic_on_broker(
-    bootstrap: str, topic_name: str, timeout_seconds: int = _CMD_TIMEOUT_SECONDS, site: str | None = None,
-) -> dict:
-    """指定ブローカー上の指定トピックを削除する内部ヘルパー。
-    topic_name/service_name を含まない結果 dict (deleted/success/message/error) を返す。
-    site が指定されていて、Skupper経由の外部リスナー呼び出しがタイムアウトした場合、
-    そのサイトのブローカーPodへ直接execするフォールバックを試す
-    (exec認証情報が無いサイトでは自動的にスキップされる)。"""
+_SITE_DISPLAY_NAMES = {"asite": "Aサイト", "bsite": "Bサイト", "csite": "Cサイト"}
+
+
+def _delete_topic_via_cli(bootstrap: str, topic_name: str, timeout_seconds: int) -> dict:
+    """Skupper経由の外部リスナー(9094)に対して kafka-topics.sh --delete を実行する。
+    exec認証情報が無いサイト(現時点ではCサイト)向けのフォールバックとしてのみ使う。"""
     try:
         result = subprocess.run(
             [
@@ -310,22 +308,6 @@ def _delete_topic_on_broker(
             timeout=timeout_seconds,
         )
     except subprocess.TimeoutExpired:
-        if site:
-            log.warning("delete_topic_cli_timeout_falling_back_to_exec", site=site, topic_name=topic_name)
-            push_status(f"外部リスナー経由の削除がタイムアウトしたため、{site}のブローカーPodへ直接接続して再試行しています...")
-            exec_result = _exec_on_broker_pod(
-                site,
-                [_KAFKA_TOPICS_CMD, "--delete", "--bootstrap-server", "localhost:9092", "--topic", topic_name],
-            )
-            if exec_result.get("success"):
-                output = exec_result.get("output", "")
-                if "UnknownTopicOrPartitionException" in output:
-                    return {"deleted": False, "message": "トピックはブローカー上に存在しません", "success": True}
-                if "Error" in output:
-                    return {"error": f"トピック削除エラー (exec/{site}): {output}", "success": False}
-                return {"deleted": True, "success": True, "via": "exec"}
-            if not exec_result.get("unavailable"):
-                return {"error": f"トピック削除エラー (exec/{site}): {exec_result.get('error')}", "success": False}
         return {"error": f"トピック削除エラー ({bootstrap}): コマンドがタイムアウトしました", "success": False}
     except Exception as e:
         return {"error": f"トピック削除エラー ({bootstrap}): {str(e)}", "success": False}
@@ -338,6 +320,41 @@ def _delete_topic_on_broker(
         return {"deleted": False, "message": "トピックはブローカー上に存在しません", "success": True}
 
     return {"error": f"トピック削除エラー ({bootstrap}): {stderr or result.stdout.strip()}", "success": False}
+
+
+def _delete_topic_on_broker(
+    bootstrap: str, topic_name: str, timeout_seconds: int = _CMD_TIMEOUT_SECONDS, site: str | None = None,
+) -> dict:
+    """指定ブローカー上の指定トピックを削除する内部ヘルパー。
+    topic_name/service_name を含まない結果 dict (deleted/success/message/error) を返す。
+
+    Skupper経由の外部リスナー(9094)は AWS ELB のIP変動やブローカー再起動直後の
+    状態不安定などで断続的にタイムアウトすることを実際に何度も確認したため、
+    site が指定されている場合は常にブローカーPodへの直接exec (内部リスナー
+    localhost:9092、Skupperを経由しないため上記の問題の影響を受けない) を
+    優先する。exec認証情報が設定されていないサイト(現時点ではCサイト)でのみ、
+    従来のSkupper経由CLI呼び出しにフォールバックする。"""
+    display_name = _SITE_DISPLAY_NAMES.get(site, site or "")
+    if site:
+        push_status(f"{display_name}処理中...")
+        exec_result = _exec_on_broker_pod(
+            site,
+            [_KAFKA_TOPICS_CMD, "--delete", "--bootstrap-server", "localhost:9092", "--topic", topic_name],
+        )
+        if exec_result.get("success"):
+            output = exec_result.get("output", "")
+            if "UnknownTopicOrPartitionException" in output:
+                return {"deleted": False, "message": "トピックはブローカー上に存在しません", "success": True}
+            if "Error" in output:
+                return {"error": f"トピック削除エラー (exec/{site}): {output}", "success": False}
+            return {"deleted": True, "success": True, "via": "exec"}
+        if not exec_result.get("unavailable"):
+            return {"error": f"トピック削除エラー (exec/{site}): {exec_result.get('error')}", "success": False}
+        # exec認証情報が無いサイト(現時点ではCサイト)のみ、ここから下のSkupper
+        # 経由CLIフォールバックに進む。
+        log.warning("delete_topic_exec_unavailable_falling_back_to_cli", site=site, topic_name=topic_name)
+
+    return _delete_topic_via_cli(bootstrap, topic_name, timeout_seconds)
 
 
 @tool
@@ -381,7 +398,6 @@ def delete_kafka_topic(topic_name: str, service_name: str) -> dict:
     short_name = _SITE_SHORT_NAMES.get(service_name, service_name)
 
     try:
-        push_status("delete_kafka_topic を実行しています...")
         primary = _delete_topic_on_broker(
             bootstrap, topic_name, timeout_seconds=_PRIMARY_DELETE_TIMEOUT_SECONDS, site=short_name,
         )
