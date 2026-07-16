@@ -196,6 +196,36 @@ def _set_mm2_pause(site: str, pause: bool) -> dict:
         return {"site": site, "paused": None, "success": False, "error": str(e)}
 
 
+def _delete_kafkatopic_cr(site: str, topic_name: str) -> dict:
+    """<site> の KafkaTopic カスタムリソース(Strimzi Topic Operator管理)を削除する。
+    Topic Operator は KafkaTopic CR を正とみなし、ブローカー上のトピックが
+    (execやCLIで直接)削除されてもCRが残っていれば実トピックを再作成して
+    しまうことを実際に確認した(Aサイトの orders-test が原因不明のまま
+    復活し続けていた真因)。ブローカー上の削除だけでは不十分で、対応する
+    KafkaTopic CRの削除が必須。認証情報が無い場合はスキップ(現時点ではCサイト)。"""
+    config = _mm2_api_config(site)
+    if config is None:
+        return {"site": site, "skipped": True, "reason": "K8s API 認証情報が未設定", "success": True}
+
+    api_server, token = config
+    url = f"{api_server}/apis/kafka.strimzi.io/v1/namespaces/{_MM2_NAMESPACE}/kafkatopics/{topic_name}"
+    try:
+        resp = httpx.delete(
+            url,
+            headers={"Authorization": f"Bearer {token}"},
+            verify=False,
+            timeout=_MM2_API_TIMEOUT_SECONDS,
+        )
+        if resp.status_code == 404:
+            return {"site": site, "deleted": False, "message": "KafkaTopic CRは存在しません", "success": True}
+        resp.raise_for_status()
+        log.info("kafkatopic_cr_deleted", site=site, topic_name=topic_name)
+        return {"site": site, "deleted": True, "success": True}
+    except Exception as e:
+        log.error("kafkatopic_cr_delete_failed", site=site, topic_name=topic_name, error=str(e))
+        return {"site": site, "deleted": False, "success": False, "error": str(e)}
+
+
 def _pause_all_mm2() -> list[dict]:
     return [_set_mm2_pause(site, True) for site in _MM2_SITES]
 
@@ -419,6 +449,18 @@ def _delete_topic_on_broker(
     display_name = _SITE_DISPLAY_NAMES.get(site, site or "")
     if site:
         push_status(f"{display_name}処理中...")
+        # NOTE: Strimzi Topic Operator が KafkaTopic CR を正として管理しており、
+        # ブローカー上のトピックをexec/CLIで直接削除しても、対応するCRが
+        # 残っていればOperatorが実トピックを再作成してしまうことを確認した。
+        # ブローカー削除より先にCRを削除する(Operatorのfinalizer経由の削除が
+        # 実トピック削除の主経路となり、後続のブローカー削除は既に消えている
+        # 前提のフォールバック/確認として働く)。
+        cr_result = _delete_kafkatopic_cr(site, topic_name)
+        if not cr_result["success"]:
+            log.warning("kafkatopic_cr_delete_failed_continuing", site=site, topic_name=topic_name, error=cr_result.get("error"))
+        if cr_result.get("deleted"):
+            # Topic Operator がfinalizer経由で実トピックを削除し終えるまで一呼吸置く。
+            time.sleep(3)
         exec_result = _exec_on_broker_pod(
             site,
             [_KAFKA_TOPICS_CMD, "--delete", "--bootstrap-server", "localhost:9092", "--topic", topic_name],
@@ -426,12 +468,12 @@ def _delete_topic_on_broker(
         if exec_result.get("success"):
             output = exec_result.get("output", "")
             if "UnknownTopicOrPartitionException" in output:
-                return {"deleted": False, "message": "トピックはブローカー上に存在しません", "success": True}
+                return {"deleted": bool(cr_result.get("deleted")), "message": "トピックはブローカー上に存在しません", "success": True, "kafkatopic_cr": cr_result}
             if "Error" in output:
-                return {"error": f"トピック削除エラー (exec/{site}): {output}", "success": False}
-            return {"deleted": True, "success": True, "via": "exec"}
+                return {"error": f"トピック削除エラー (exec/{site}): {output}", "success": False, "kafkatopic_cr": cr_result}
+            return {"deleted": True, "success": True, "via": "exec", "kafkatopic_cr": cr_result}
         if not exec_result.get("unavailable"):
-            return {"error": f"トピック削除エラー (exec/{site}): {exec_result.get('error')}", "success": False}
+            return {"error": f"トピック削除エラー (exec/{site}): {exec_result.get('error')}", "success": False, "kafkatopic_cr": cr_result}
         # exec認証情報が無いサイト(現時点ではCサイト)のみ、ここから下のSkupper
         # 経由CLIフォールバックに進む。
         log.warning("delete_topic_exec_unavailable_falling_back_to_cli", site=site, topic_name=topic_name)
