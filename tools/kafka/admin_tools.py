@@ -177,88 +177,6 @@ def _resume_all_mm2() -> list[dict]:
     return [_set_mm2_pause(site, False) for site in _MM2_SITES]
 
 
-def _exclude_topic_from_pattern(pattern: str, topic_name: str) -> str:
-    """既存の topicsPattern の直後に、指定トピック名だけを除外する否定先読みを
-    追加する。どの選択肢(orders.*等)がマッチしていたかに関わらず機能する
-    汎用的な方法(例: "^(orders.*|...)$" -> "^(?!orders-test$)(orders.*|...)$")。
-    既に同じ除外が含まれている場合は何もしない(冪等)。"""
-    import re as _re
-    exclusion = f"(?!{_re.escape(topic_name)}$)"
-    if exclusion in pattern:
-        return pattern
-    if pattern.startswith("^"):
-        return "^" + exclusion + pattern[1:]
-    return exclusion + pattern
-
-
-def _mirror_matches_source(mirror: dict, source_cluster_alias: str, source_service_name: str) -> bool:
-    """mirrors[] の1エントリが、削除元サイトを sourceCluster としているかを判定する。
-    実際のライブリソースを確認したところ、想定していた spec.mirrors[].sourceCluster
-    フィールドを持たない構成(sourceConnector.config.bootstrap.servers に直接
-    ブローカーアドレスを埋め込む形式)のサイトが存在することが分かった
-    (このフィールド不一致により、除外パターンが一切適用されない不具合が
-    発生していた)。両方の構成に対応するため、どちらの手掛かりでも判定する。"""
-    if mirror.get("sourceCluster") == source_cluster_alias:
-        return True
-    bootstrap_servers = mirror.get("sourceConnector", {}).get("config", {}).get("bootstrap.servers", "")
-    return bootstrap_servers == source_service_name
-
-
-def _exclude_topic_on_mm2(site: str, source_cluster_alias: str, source_service_name: str, topic_name: str) -> dict:
-    """<site> の KafkaMirrorMaker2 リソースについて、削除元サイトを sourceCluster
-    とする mirrors エントリの topicsPattern から topic_name を除外する。
-    MM2は自身の内部チェックポイントに基づいてトピックを再作成することがあり
-    (削除直後にMM2を再開すると復活する事例を確認済み)、その根本原因(再照合
-    対象のパターンに一致し続けていること)を解消する唯一の安全な方法として、
-    削除の都度このパターン自体を更新する。
-    (spec.mirrors はK8s側でリスト全体を置き換える必要があるため、まずGETで
-    現在の全エントリを取得し、対象エントリだけを書き換えて丸ごとPATCHし直す。)"""
-    config = _mm2_api_config(site)
-    if config is None:
-        return {"site": site, "skipped": True, "reason": "MM2 API 認証情報が未設定", "success": True}
-
-    api_server, token = config
-    url = (
-        f"{api_server}/apis/kafka.strimzi.io/v1beta2/namespaces/{_MM2_NAMESPACE}"
-        f"/kafkamirrormaker2s/{_MM2_RESOURCE_NAME}"
-    )
-    headers = {"Authorization": f"Bearer {token}"}
-    try:
-        get_resp = httpx.get(url, headers=headers, verify=False, timeout=_MM2_API_TIMEOUT_SECONDS)
-        get_resp.raise_for_status()
-        mirrors = get_resp.json().get("spec", {}).get("mirrors", [])
-
-        changed = False
-        for mirror in mirrors:
-            if not _mirror_matches_source(mirror, source_cluster_alias, source_service_name):
-                continue
-            current_pattern = mirror.get("topicsPattern", "")
-            new_pattern = _exclude_topic_from_pattern(current_pattern, topic_name)
-            if new_pattern != current_pattern:
-                mirror["topicsPattern"] = new_pattern
-                changed = True
-
-        if not changed:
-            return {"site": site, "changed": False, "success": True}
-
-        patch_resp = httpx.patch(
-            url,
-            json={"spec": {"mirrors": mirrors}},
-            headers={**headers, "Content-Type": "application/merge-patch+json"},
-            verify=False,
-            timeout=_MM2_API_TIMEOUT_SECONDS,
-        )
-        patch_resp.raise_for_status()
-        log.info("mm2_topic_excluded", site=site, source_cluster=source_cluster_alias, topic_name=topic_name)
-        return {"site": site, "changed": True, "success": True}
-    except Exception as e:
-        log.error(
-            "mm2_topic_exclusion_failed",
-            site=site, source_cluster=source_cluster_alias, topic_name=topic_name, error=str(e),
-        )
-        return {"site": site, "changed": False, "success": False, "error": str(e)}
-
-
 def list_broker_topics(bootstrap: str) -> set[str]:
     """指定ブローカー上に存在するトピック名の集合を返す(kafka-topics.sh --list)。
     scheduled_tasks.py の定期スキャンから使われる読み取り専用のヘルパー。
@@ -476,20 +394,6 @@ def delete_kafka_topic(topic_name: str, service_name: str) -> dict:
                 **mirror_result,
             })
 
-        # NOTE: MM2は自身の内部チェックポイントに基づいてトピックを再作成する
-        # ことがあり、削除しても一時停止を解除すると復活してしまうことを実際に
-        # 確認した。根本原因(このトピック名がtopicsPatternに一致し続けている
-        # こと)を解消するため、削除元サイトを sourceCluster とする他サイトの
-        # mirrors設定から、このトピック名を否定先読みで除外する。以後の
-        # refreshサイクルでこのトピックが再ミラーリング対象にならなくなる。
-        push_status("MM2の除外パターンを更新しています...")
-        source_cluster_alias = f"shop-{short_name}"
-        pattern_exclusions = [
-            _exclude_topic_on_mm2(other_short, source_cluster_alias, service_name, topic_name)
-            for other_short in _MM2_SITES
-            if other_short != short_name
-        ]
-
         # NOTE: MM2 は一時停止中も自身の内部チェックポイント(mirrormaker2-cluster-
         # offsets 等)にトピックの存在を記憶しており、削除直後に再開すると
         # そのチェックポイントに基づいて再作成してしまうことを実際に確認した。
@@ -503,7 +407,6 @@ def delete_kafka_topic(topic_name: str, service_name: str) -> dict:
     return {
         "mm2_pause_results": mm2_pause_results,
         "mm2_resume_results": mm2_resume_results,
-        "mm2_pattern_exclusions": pattern_exclusions,
         "topic_name": topic_name,
         "service_name": service_name,
         "bootstrap_servers": bootstrap,
