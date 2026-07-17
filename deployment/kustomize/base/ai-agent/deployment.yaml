@@ -129,6 +129,48 @@ spec:
                   name: csite-mm2-pause-token
                   key: token
                   optional: true
+            # platform-ops-agent の list_namespaces/get_pods/list_services/list_routes が
+            # A/B/Cサイトを問い合わせるために使う、各サイト自身のKubernetes APIへの
+            # 閲覧専用(view ロール)ServiceAccountトークン。未設定でも動作するが、
+            # その場合は対象サイトへの問い合わせがエラーになる
+            # (scripts/provision-site-view-tokens.sh で発行・Secret化する。
+            # tools/openshift/openshift_tools.py の _site_k8s_config 参照)。
+            - name: ASITE_K8S_API_SERVER
+              valueFrom:
+                secretKeyRef:
+                  name: asite-k8s-view-token
+                  key: api-server
+                  optional: true
+            - name: ASITE_K8S_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: asite-k8s-view-token
+                  key: token
+                  optional: true
+            - name: BSITE_K8S_API_SERVER
+              valueFrom:
+                secretKeyRef:
+                  name: bsite-k8s-view-token
+                  key: api-server
+                  optional: true
+            - name: BSITE_K8S_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: bsite-k8s-view-token
+                  key: token
+                  optional: true
+            - name: CSITE_K8S_API_SERVER
+              valueFrom:
+                secretKeyRef:
+                  name: csite-k8s-view-token
+                  key: api-server
+                  optional: true
+            - name: CSITE_K8S_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: csite-k8s-view-token
+                  key: token
+                  optional: true
           resources:
             requests:
               cpu: "500m"

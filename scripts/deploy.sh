@@ -26,6 +26,13 @@ set -e
 #                                   - 初期ユーザー(Noriaki Mushino)の作成情報
 #                                     (既定: nmushino / nmushino@redhat.com / changeme123)
 #
+#   A/B/Cサイト閲覧用トークン関連の環境変数 (任意。1つも指定しなければスキップ):
+#     ASITE_API_SERVER / ASITE_ADMIN_USER / ASITE_ADMIN_PASSWORD
+#     BSITE_API_SERVER / BSITE_ADMIN_USER / BSITE_ADMIN_PASSWORD
+#     CSITE_API_SERVER / CSITE_ADMIN_USER / CSITE_ADMIN_PASSWORD
+#       - 指定したサイトのみ、platform-ops-agent から view 権限で問い合わせ
+#         できるようになる (scripts/provision-site-view-tokens.sh 参照)
+#
 #   例:
 #     ./scripts/deploy.sh dev --init-secrets
 #     ./scripts/deploy.sh staging
@@ -328,6 +335,20 @@ oc delete job qwen3-8b-model-download -n "$NAMESPACE" --ignore-not-found=true &>
 # ===== Kustomize デプロイ =====
 echo "Kustomize でデプロイ中..."
 oc apply -k "deployment/kustomize/overlays/${ENV}" -n "$NAMESPACE"
+
+# ===== A/B/Cサイト閲覧用トークンのプロビジョニング (任意) =====
+# platform-ops-agent の list_namespaces/get_pods/list_services/list_routes が
+# 各サイトを問い合わせるための view ロールトークンを発行する。
+# <SITE>_API_SERVER/<SITE>_ADMIN_USER/<SITE>_ADMIN_PASSWORD が
+# 1つも設定されていない場合はスキップする(既存デプロイの再実行等、
+# 毎回サイト管理者パスワードを渡したくない場合はこの環境変数を省略してよい。
+# その場合、AI Agent は自身のドメインのみ問い合わせ可能なまま変わらない)。
+if [ -n "${ASITE_API_SERVER:-}${BSITE_API_SERVER:-}${CSITE_API_SERVER:-}" ]; then
+  echo "A/B/Cサイト閲覧用トークンをプロビジョニング中..."
+  NAMESPACE="$NAMESPACE" ./scripts/provision-site-view-tokens.sh
+else
+  echo "A/B/Cサイト閲覧用トークンのプロビジョニングをスキップ (ASITE_API_SERVER 等が未設定)"
+fi
 
 # chat-ui はブラウザから直接 各サービスの外部 Route を叩くため、
 # Route作成後に実際のホスト名を環境変数に反映する。
