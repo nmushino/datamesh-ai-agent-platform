@@ -79,6 +79,46 @@ datamesh-ai-agent-platform
 └── approval-service
 ```
 
+## MCP Gateway (Red Hat Connectivity Link)
+
+上図の「API Gateway / MCP Gateway」は **Red Hat Connectivity Link (rhcl-operator)** で実装する。
+
+- **単位**: MCP サーバーはクラスタ(サイト)ごとに論理的にまとまった単位とする。サイトごとに `Gateway` を 1 つ、その配下に `mcp-server` への `HTTPRoute` を 1 本配置する。
+- **Gateway API 実行基盤**: OpenShift 4.21 はネイティブに Gateway API をサポートしており(`GatewayClass.controllerName: openshift.io/gateway-controller/v1`)、Istio/OSSM の個別インストールは不要。
+- **認証**: `AuthPolicy` で Keycloak (realm: `drone-platform`) に完全に委任する。`issuerUrl` を指定するだけで Authorino が JWKS を自動解決しトークン署名検証を行うため、Gateway 側に認証ロジックを自前実装しない。検証済み claim (`sub` / `preferred_username`) は下流ヘッダーに引き渡す。
+- **認可**: Gateway 層では行わず、Planner Agent 後段の **OPA Policy Engine** の責務のまま残す(Tool policy はコード側)。
+- **コスト制御**: `RateLimitPolicy` でユーザー単位に呼び出し回数の下限の歯止めをかける。トークン課金など詳細なコスト計算は `ai-policy-gateway` の cost limiter が担う。
+- **Audit Log**: Gateway (Envoy) のアクセスログを OpenTelemetry Collector 経由で Audit Log に統合する。
+
+導入コマンド:
+
+```bash
+# Operator インストール (setup に組み込み済み、Skupper と同じ流儀でサイトごとに実行)
+./script/ocpdeploy.sh setup
+
+# Gateway / HTTPRoute / AuthPolicy / RateLimitPolicy のデプロイ
+./script/ocpdeploy.sh mcpgateway deploy
+./script/ocpdeploy.sh mcpgateway status
+./script/ocpdeploy.sh mcpgateway cleanup
+```
+
+マニフェスト一式は `quarkusdroneshop-ansible/openshift/` 配下:
+
+```
+connectivitylink-operator.yaml    # rhcl-operator Subscription
+mcp-gateway.yaml                  # GatewayClass + Gateway
+mcp-httproute.yaml                # mcp-server への HTTPRoute
+mcp-gateway-authpolicy.yaml       # Keycloak OIDC AuthPolicy
+mcp-gateway-ratelimitpolicy.yaml  # ユーザー単位 RateLimitPolicy
+```
+
+### 未着手・持ち越し事項
+
+- `mcp-server` 実体 (Deployment/Service) の実装
+- `Gateway` の TLS 用 Secret (`mcp-gateway-tls`) の用意
+- 実クラスタでの `mcpgateway deploy` 動作検証
+- `ai-policy-gateway` (input/output filter, OPA 連携) 側の実装
+
 ## 主要ユースケース
 
 | ユースケース | 説明 |
