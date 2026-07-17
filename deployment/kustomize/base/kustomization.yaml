@@ -17,6 +17,8 @@ resources:
   - business-api/deployment.yaml
   - business-api/service.yaml
   - business-api/route.yaml
+  - mcp-server/deployment.yaml
+  - mcp-server/service.yaml
   - postgresql/deployment.yaml
   - chat-ui/deployment.yaml
   - namespace.yaml

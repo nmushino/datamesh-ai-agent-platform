@@ -90,16 +90,13 @@ datamesh-ai-agent-platform
 - **コスト制御**: `RateLimitPolicy` でユーザー単位に呼び出し回数の下限の歯止めをかける。トークン課金など詳細なコスト計算は `ai-policy-gateway` の cost limiter が担う。
 - **Audit Log**: Gateway (Envoy) のアクセスログを OpenTelemetry Collector 経由で Audit Log に統合する。
 
-導入コマンド:
+導入コマンド(`ocpdeploy.sh` とは独立した専用スクリプト。サイトごとに実行):
 
 ```bash
-# Operator インストール (setup に組み込み済み、Skupper と同じ流儀でサイトごとに実行)
-./script/ocpdeploy.sh setup
-
-# Gateway / HTTPRoute / AuthPolicy / RateLimitPolicy のデプロイ
-./script/ocpdeploy.sh mcpgateway deploy
-./script/ocpdeploy.sh mcpgateway status
-./script/ocpdeploy.sh mcpgateway cleanup
+./script/connectivitylink.sh setup     # rhcl-operator インストール
+./script/connectivitylink.sh deploy    # Gateway / HTTPRoute / AuthPolicy / RateLimitPolicy デプロイ
+./script/connectivitylink.sh status    # ステータス確認
+./script/connectivitylink.sh cleanup   # Gateway 関連リソースの削除 (operator 本体は削除しない)
 ```
 
 マニフェスト一式は `quarkusdroneshop-ansible/openshift/` 配下:
@@ -112,11 +109,32 @@ mcp-gateway-authpolicy.yaml       # Keycloak OIDC AuthPolicy
 mcp-gateway-ratelimitpolicy.yaml  # ユーザー単位 RateLimitPolicy
 ```
 
+### mcp-server 実体
+
+`mcp-server/` に実装済み。既存の `tools/openmetadata/search_tools.py` の LangChain
+`@tool` をそのまま呼び出す薄いラッパーとして、Model Context Protocol
+(streamable-http, port 8000) を公開する(ビジネスロジックは重複実装しない)。
+
+```
+mcp-server/
+├── server.py         # FastMCP (streamable-http) 本体。/healthz も公開
+├── requirements.txt  # mcp / uvicorn / starlette
+└── Dockerfile
+```
+
+デプロイ先は既存の business-api / chat-ui と同じ `ai-agent-platform` namespace
+(`deployment/kustomize/base/mcp-server/`)。Gateway 本体は別 namespace
+(`connectivitylink`) のため、HTTPRoute の backendRef はクロス namespace 参照になり、
+`mcp-httproute-referencegrant.yaml` の `ReferenceGrant` で許可している。
+Ingress は `mcp-server-policy` (NetworkPolicy) で `connectivitylink` namespace
+からの 8000 番のみに制限。
+
 ### 未着手・持ち越し事項
 
-- `mcp-server` 実体 (Deployment/Service) の実装
-- `Gateway` の TLS 用 Secret (`mcp-gateway-tls`) の用意
-- 実クラスタでの `mcpgateway deploy` 動作検証
+- `mcp-server` イメージの build/push (Tekton パイプライン未整備) と、`ai-agent-platform`
+  namespace 自体の実クラスタへのデプロイ(現状 kustomize 定義のみで未適用)
+- `Gateway` の TLS 用 Secret (`mcp-gateway-tls`) は検証用に自己署名証明書で作成済み。
+  実運用では cert-manager 等に置き換え推奨
 - `ai-policy-gateway` (input/output filter, OPA 連携) 側の実装
 
 ## 主要ユースケース
