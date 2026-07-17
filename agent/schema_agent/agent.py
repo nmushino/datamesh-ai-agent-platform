@@ -10,7 +10,7 @@ from tools.openmetadata import (
     update_column_description,
     create_quality_rule,
 )
-from tools.kafka import create_kafka_topic, delete_kafka_topic
+from tools.kafka import create_kafka_topic, delete_kafka_topic, topic_exists
 from tools.github import (
     find_github_files_by_name,
     get_github_file_content,
@@ -28,6 +28,7 @@ SCHEMA_TOOLS = [
     register_glossary_term,
     create_kafka_topic,
     delete_kafka_topic,
+    topic_exists,
     update_column_description,
     create_quality_rule,
     find_github_files_by_name,

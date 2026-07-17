@@ -275,6 +275,46 @@ def list_broker_topics(bootstrap: str) -> set[str]:
 
 
 @tool
+def topic_exists(topic_name: str, service_name: str) -> dict:
+    """
+    対象サイトの実際の Kafka ブローカー上に、指定したトピックが既に
+    存在するかどうかを確認します。Developer Hub 等から「このトピック名が
+    存在しなければ新規作成する」という依頼を受けた場合、create_kafka_topic
+    を呼ぶ前にこのツールで存在確認を行うこと。
+
+    Args:
+        topic_name: 確認するトピック名
+        service_name: 対象サイトの Messaging Service 名。
+            Aサイト: "external-shop-cluster-kafka-asite:9094"
+            Bサイト: "external-shop-cluster-kafka-bsite:9094"
+            Cサイト: "external-shop-cluster-kafka-csite:9094"
+    """
+    bootstrap = _SITE_BOOTSTRAP_SERVERS.get(service_name)
+    if not bootstrap:
+        return {
+            "error": f"未知の service_name: {service_name}。"
+                     f"利用可能な値: {list(_SITE_BOOTSTRAP_SERVERS.keys())}",
+            "success": False,
+        }
+
+    log.info("topic_exists_check", topic_name=topic_name, service_name=service_name, bootstrap=bootstrap)
+    try:
+        topics = list_broker_topics(bootstrap)
+    except subprocess.TimeoutExpired:
+        return {"error": f"トピック存在確認エラー ({bootstrap}): コマンドがタイムアウトしました", "success": False}
+    except Exception as e:
+        log.error("topic_exists_check_failed", topic_name=topic_name, service_name=service_name, error=str(e))
+        return {"error": f"トピック存在確認エラー ({bootstrap}): {str(e)}", "success": False}
+
+    return {
+        "topic_name": topic_name,
+        "service_name": service_name,
+        "exists": topic_name in topics,
+        "success": True,
+    }
+
+
+@tool
 def create_kafka_topic(topic_name: str, service_name: str, partitions: int = 1, replication_factor: int = 1) -> dict:
     """
     対象サイトの実際の Kafka ブローカー上にトピックを作成します。
