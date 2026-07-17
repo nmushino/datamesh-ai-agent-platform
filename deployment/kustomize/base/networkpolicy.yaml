@@ -96,9 +96,24 @@ spec:
         - ipBlock:
             cidr: 18.117.213.10/32  # external-shop-cluster-kafka-bsite advertised ELB (AZ2)
         - ipBlock:
-            cidr: 3.141.248.102/32  # external-shop-cluster-kafka-csite advertised ELB (AZ1、csite再構築(sandbox850)後の新IP)
+            cidr: 13.59.243.104/32  # external-shop-cluster-kafka-csite advertised ELB (bootstrap AZ1、sandbox850)
         - ipBlock:
-            cidr: 13.59.243.104/32  # external-shop-cluster-kafka-csite advertised ELB (AZ2、csite再構築(sandbox850)後の新IP)
+            cidr: 3.141.248.102/32  # external-shop-cluster-kafka-csite advertised ELB (bootstrap AZ2、sandbox850)
+        - ipBlock:
+            cidr: 13.59.7.106/32  # external-shop-cluster-kafka-csite advertised ELB (broker0 AZ1、sandbox850)
+        - ipBlock:
+            cidr: 3.136.74.195/32  # external-shop-cluster-kafka-csite advertised ELB (broker0 AZ2、sandbox850)
+        - ipBlock:
+            cidr: 18.116.139.253/32  # external-shop-cluster-kafka-csite advertised ELB (broker1 AZ1、sandbox850)
+        - ipBlock:
+            cidr: 3.12.67.142/32  # external-shop-cluster-kafka-csite advertised ELB (broker1 AZ2、sandbox850)
+        - ipBlock:
+            cidr: 18.117.60.108/32  # external-shop-cluster-kafka-csite advertised ELB (broker2 AZ1、sandbox850)
+        - ipBlock:
+            cidr: 3.13.234.199/32  # external-shop-cluster-kafka-csite advertised ELB (broker2 AZ2、sandbox850)
+        # csite は A/B サイトと異なり bootstrap と各ブローカーが別々の ELB (broker
+        # ごとに個別 LoadBalancer Service) になっているため、bootstrap 接続後の
+        # 個別ブローカーへの直接接続用に broker 0/1/2 の advertised ELB も追加。
       ports:
         - port: 9094
     # A/B/C サイト自身の Kubernetes API サーバーへの egress。delete_kafka_topic が
@@ -199,6 +214,26 @@ spec:
       ports:
         - port: 8080
         - port: 8443
+    # business-api の OIDC auth-server-url は iss claim を外部Route URLと一致させる
+    # 必要があるため、keycloak namespace 内部への直接アクセスではなく外部Route
+    # (sso.apps.ocp.*、reencrypt) 経由で接続する。
+    # NOTE: namespaceSelector: openshift-ingress によるルールは効かなかった
+    # (デフォルトRouterは hostNetwork: true で動作しており、その場合 Pod IP が
+    # ノードのIP=このOpenTLCサンドボックスではパブリックIPになるため、OVN-Kubernetes
+    # の NetworkPolicy が hostNetwork Pod のトラフィックを openshift-ingress
+    # namespace 所属として正しく評価できていない模様)。Kafka ELB や APIサーバーの
+    # 許可リストと同様、Route の名前解決結果を ipBlock で直接許可する形にした。
+    # sso.apps.ocp.7n8gs.sandbox847.opentlc.com の IP が変わった場合は要更新。
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-ingress
+        - ipBlock:
+            cidr: 13.58.29.199/32   # sso.apps.ocp.7n8gs.sandbox847.opentlc.com (Keycloak Route、1つ目のDNS解決先)
+        - ipBlock:
+            cidr: 3.131.54.214/32   # sso.apps.ocp.7n8gs.sandbox847.opentlc.com (Keycloak Route、2つ目のDNS解決先)
+      ports:
+        - port: 443
     - to:
         - namespaceSelector:
             matchLabels:
