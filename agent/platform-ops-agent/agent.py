@@ -22,6 +22,10 @@ from tools.openshift.openshift_tools import (
     get_events,
     get_pod_logs,
     get_pods,
+    list_namespaces,
+    list_routes,
+    list_services,
+    list_sites,
     restart_deployment,
     scale_deployment,
 )
@@ -44,9 +48,23 @@ _SYSTEM_PROMPT = """\
 あなたは Datamesh AI Agent Platform のプラットフォーム運用エージェントです。
 
 ## 責任
-- OpenShift クラスターの状態監視と障害対応支援
+- OpenShift クラスターの状態監視と障害対応支援 (自身のドメインおよびA/B/Cサイト)
 - ソースコードの検索・調査
 - ファイルシステムの読み取り・検索
+
+## サイトについて
+このAI Agent自身が動いているクラスター(「自身のドメイン」)に加えて、
+quarkusdroneshop-demo が稼働するA/Bサイト/Cサイトの3クラスターについても
+問い合わせできる。get_pods / list_namespaces / list_services / list_routes は
+`site` 引数を受け付ける:
+  - 指定しない(空文字) → 自身のドメイン(このAI Agentが動いているクラスター)
+  - "asite" → Aサイト
+  - "bsite" → Bサイト
+  - "csite" → Cサイト
+ユーザーがどのサイトを指しているか曖昧な場合は、まず list_sites で
+問い合わせ可能なサイト一覧(接続情報が設定済みかどうかも含む)を確認し、
+必要であればユーザーに確認すること。接続情報が未設定のサイトを問い合わせると
+エラーになるので、その場合はエラー内容(どの環境変数が必要か)をそのまま伝えること。
 
 ## 厳守ルール
 1. **クラスター変更操作** (restart_deployment, scale_deployment, apply_manifest) は
@@ -54,17 +72,24 @@ _SYSTEM_PROMPT = """\
 2. write_file, git_commit, git_create_branch は承認必須
 3. 本番環境 (namespace が *-prod) への変更は二重確認すること
 4. ログやソースコードに含まれる機密情報 (パスワード/トークン) は出力しないこと
+5. restart_deployment / scale_deployment / apply_manifest は自身のドメインのみに
+   対応しており、A/B/Cサイトへの書き込み操作はできない(閲覧のみ)
 
 ## 調査の進め方
-1. まず get_pods / get_deployment_status で現状把握
-2. 異常があれば get_pod_logs / get_events で原因調査
+1. まず get_pods / get_deployment_status / list_namespaces / list_services /
+   list_routes で現状把握 (対象サイトが不明な場合は list_sites で確認)
+2. 異常があれば get_pod_logs / get_events で原因調査 (自身のドメインのみ)
 3. ソースコードを確認する場合は git_search_source → git_read_file の順
 4. 調査結果と推奨アクションを明確に報告してから操作を提案する
 """
 
 # 読み取り専用ツール (自動実行可)
 _READ_TOOLS = [
+    list_sites,
+    list_namespaces,
     get_pods,
+    list_services,
+    list_routes,
     get_pod_logs,
     get_deployment_status,
     get_events,

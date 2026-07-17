@@ -94,6 +94,114 @@ class TestScaleDeployment:
         assert "error" in result
 
 
+class TestListSites:
+    def test_list_sites_reports_configured_and_unconfigured(self):
+        from tools.openshift.openshift_tools import list_sites
+
+        with patch.dict(os.environ, {"ASITE_K8S_API_SERVER": "https://a", "ASITE_K8S_TOKEN": "tok"}, clear=False):
+            for key in ("BSITE_K8S_API_SERVER", "BSITE_K8S_TOKEN", "CSITE_K8S_API_SERVER", "CSITE_K8S_TOKEN"):
+                os.environ.pop(key, None)
+            result = list_sites.invoke({})
+
+        assert result["success"] is True
+        assert "asite" in result["configured_sites"]
+        assert "bsite" in result["unconfigured_sites"]
+
+
+class TestListNamespaces:
+    def test_list_namespaces_self_uses_oc(self):
+        from tools.openshift.openshift_tools import list_namespaces
+
+        with patch("tools.openshift.openshift_tools._run") as mock_run:
+            mock_run.return_value = (True, "NAME\tai-agent-platform")
+            result = list_namespaces.invoke({})
+
+        assert result["success"] is True
+        assert result["site"] == "self"
+
+    def test_list_namespaces_site_without_credentials_fails(self):
+        from tools.openshift.openshift_tools import list_namespaces
+
+        for key in ("ASITE_K8S_API_SERVER", "ASITE_K8S_TOKEN"):
+            os.environ.pop(key, None)
+        result = list_namespaces.invoke({"site": "asite"})
+
+        assert result["success"] is False
+        assert "ASITE_K8S_API_SERVER" in result["error"]
+
+    def test_list_namespaces_unknown_site_fails(self):
+        from tools.openshift.openshift_tools import list_namespaces
+
+        result = list_namespaces.invoke({"site": "dsite"})
+
+        assert result["success"] is False
+
+
+class TestGetPodsSite:
+    def test_get_pods_site_requires_namespace(self):
+        from tools.openshift.openshift_tools import get_pods
+
+        with patch.dict(os.environ, {"ASITE_K8S_API_SERVER": "https://a", "ASITE_K8S_TOKEN": "tok"}, clear=False):
+            result = get_pods.invoke({"site": "asite"})
+
+        assert result["success"] is False
+        assert "namespace" in result["error"]
+
+    def test_get_pods_site_success(self):
+        from tools.openshift.openshift_tools import get_pods
+
+        fake_response = {
+            "items": [
+                {
+                    "metadata": {"name": "qdca10-abc"},
+                    "status": {
+                        "phase": "Running",
+                        "containerStatuses": [{"ready": True, "restartCount": 0}],
+                    },
+                }
+            ]
+        }
+        with patch.dict(os.environ, {"ASITE_K8S_API_SERVER": "https://a", "ASITE_K8S_TOKEN": "tok"}, clear=False):
+            with patch("tools.openshift.openshift_tools._site_api_get") as mock_get:
+                mock_get.return_value = (True, fake_response)
+                result = get_pods.invoke({"site": "asite", "namespace": "quarkusdroneshop-demo"})
+
+        assert result["success"] is True
+        assert result["pods"][0]["name"] == "qdca10-abc"
+        assert result["pods"][0]["ready"] is True
+
+
+class TestListServicesAndRoutes:
+    def test_list_services_self_uses_oc(self):
+        from tools.openshift.openshift_tools import list_services
+
+        with patch("tools.openshift.openshift_tools._run") as mock_run:
+            mock_run.return_value = (True, "NAME\tweb")
+            result = list_services.invoke({"namespace": "quarkusdroneshop-demo"})
+
+        assert result["success"] is True
+        assert result["site"] == "self"
+
+    def test_list_routes_site_success(self):
+        from tools.openshift.openshift_tools import list_routes
+
+        fake_response = {
+            "items": [
+                {
+                    "metadata": {"name": "web"},
+                    "spec": {"host": "web-quarkusdroneshop-demo.apps.example.com", "to": {"name": "web"}},
+                }
+            ]
+        }
+        with patch.dict(os.environ, {"BSITE_K8S_API_SERVER": "https://b", "BSITE_K8S_TOKEN": "tok"}, clear=False):
+            with patch("tools.openshift.openshift_tools._site_api_get") as mock_get:
+                mock_get.return_value = (True, fake_response)
+                result = list_routes.invoke({"site": "bsite", "namespace": "quarkusdroneshop-demo"})
+
+        assert result["success"] is True
+        assert result["routes"][0]["host"] == "web-quarkusdroneshop-demo.apps.example.com"
+
+
 class TestRestartDeployment:
     def test_restart_deployment_success(self):
         from tools.openshift.openshift_tools import restart_deployment

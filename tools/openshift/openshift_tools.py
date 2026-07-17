@@ -11,6 +11,7 @@ import os
 import subprocess
 from typing import Any
 
+import httpx
 import structlog
 from langchain_core.tools import tool
 
@@ -19,9 +20,21 @@ log = structlog.get_logger(__name__)
 _OC_CMD = os.getenv("OC_CMD", "oc")       # oc または kubectl
 _NAMESPACE = os.getenv("OPENSHIFT_NAMESPACE", "ai-agent-platform")
 
+# A/B/C サイト(quarkusdroneshop-demo が動いている各 OpenShift クラスター)向け。
+# tools/kafka/admin_tools.py の _mm2_api_config と同じパターンで、
+# <SITE>_K8S_API_SERVER / <SITE>_K8S_TOKEN 環境変数からサイトごとの
+# Kubernetes API サーバーアドレスと閲覧用トークンを読む。
+# (MM2一時停止用のトークンは kafkamirrormaker2 リソースのみに絞られた
+# スコープであり、Namespace/Pod/Service/Route の閲覧には使えないため、
+# 別途 view 権限のトークンをこの環境変数名で用意する必要がある)
+_SITES = ["asite", "bsite", "csite"]
+_SITE_DISPLAY_NAMES = {"asite": "Aサイト", "bsite": "Bサイト", "csite": "Cサイト"}
+_API_TIMEOUT_SECONDS = 15
+
 
 def _run(args: list[str], timeout: int = 30) -> tuple[bool, str]:
-    """oc/kubectl コマンドを実行し (success, output) を返す。"""
+    """oc/kubectl コマンドを実行し (success, output) を返す。
+    「自身のドメイン」(このAI Agentが動いているクラスター)向け。"""
     cmd = [_OC_CMD, *args]
     try:
         result = subprocess.run(
@@ -36,28 +49,230 @@ def _run(args: list[str], timeout: int = 30) -> tuple[bool, str]:
         return False, f"コマンドが見つかりません: {_OC_CMD}"
 
 
+def _site_k8s_config(site: str) -> tuple[str, str] | None:
+    """<site>_K8S_API_SERVER / <site>_K8S_TOKEN 環境変数から接続情報を返す。
+    未設定の場合は None (呼び出し元でエラーとして返す)。"""
+    api_server = os.environ.get(f"{site.upper()}_K8S_API_SERVER")
+    token = os.environ.get(f"{site.upper()}_K8S_TOKEN")
+    if not api_server or not token:
+        return None
+    return api_server, token
+
+
+def _site_api_get(site: str, path: str) -> tuple[bool, Any]:
+    """指定サイトの Kubernetes/OpenShift REST API に GET リクエストを送る。
+    戻り値は (success, json または エラーメッセージ)。"""
+    config = _site_k8s_config(site)
+    if config is None:
+        return False, (
+            f"{site} のAPI接続情報が未設定です "
+            f"({site.upper()}_K8S_API_SERVER / {site.upper()}_K8S_TOKEN 環境変数が必要)"
+        )
+    api_server, token = config
+    try:
+        resp = httpx.get(
+            f"{api_server}{path}",
+            headers={"Authorization": f"Bearer {token}"},
+            # NOTE: 各サイトのKubernetes APIサーバー証明書はサイトごとのクラスタ内CAが
+            # 発行しており、このコンテナイメージにCAバンドルを同梱していないため
+            # 検証をスキップする(tools/kafka/admin_tools.py の _set_mm2_pause と同じ理由)。
+            verify=False,
+            timeout=_API_TIMEOUT_SECONDS,
+        )
+        resp.raise_for_status()
+        return True, resp.json()
+    except Exception as e:
+        return False, str(e)
+
+
+def _validate_site(site: str) -> str | None:
+    """site が空文字(自身のドメイン)または既知のサイト名であることを確認する。
+    不正な場合はエラーメッセージを返し、問題なければ None を返す。"""
+    if site and site not in _SITES:
+        return f"未知の site: {site}。空文字(自身のドメイン)または {_SITES} のいずれかを指定してください。"
+    return None
+
+
 # ─── Read 系 ──────────────────────────────────────────────────────────────────
 
 @tool
-def get_pods(namespace: str = "", label_selector: str = "") -> dict[str, Any]:
+def list_sites() -> dict[str, Any]:
+    """問い合わせ可能なサイト一覧を返す。「自身のドメイン」(このAI Agentが
+    動いているクラスター、site を指定しない場合)と、A/B/Cサイト(それぞれ
+    <SITE>_K8S_API_SERVER / <SITE>_K8S_TOKEN 環境変数が設定されていれば
+    問い合わせ可能)を区別して報告する際に使うこと。"""
+    configured = [s for s in _SITES if _site_k8s_config(s) is not None]
+    return {
+        "self": "site 引数を空にすると、このAI Agentが動いているクラスター(自身のドメイン)を問い合わせる",
+        "sites": _SITES,
+        "configured_sites": configured,
+        "unconfigured_sites": [s for s in _SITES if s not in configured],
+        "success": True,
+    }
+
+
+@tool
+def list_namespaces(site: str = "") -> dict[str, Any]:
+    """Namespace 一覧を取得する。
+
+    Args:
+        site: "asite"/"bsite"/"csite" のいずれか。空文字の場合は
+            このAI Agentが動いているクラスター(自身のドメイン)を対象にする。
+    """
+    if (err := _validate_site(site)) is not None:
+        return {"error": err, "success": False}
+
+    if not site:
+        ok, output = _run(["get", "namespaces"])
+        if not ok:
+            return {"error": output, "success": False}
+        return {"site": "self", "namespaces": output, "success": True}
+
+    ok, data = _site_api_get(site, "/api/v1/namespaces")
+    if not ok:
+        log.error("list_namespaces.failed", site=site, error=data)
+        return {"error": f"Namespace一覧取得エラー ({_SITE_DISPLAY_NAMES.get(site, site)}): {data}", "success": False}
+
+    namespaces = [
+        {
+            "name": item["metadata"]["name"],
+            "status": item.get("status", {}).get("phase", "unknown"),
+        }
+        for item in data.get("items", [])
+    ]
+    return {"site": site, "namespaces": namespaces, "success": True}
+
+
+@tool
+def get_pods(namespace: str = "", label_selector: str = "", site: str = "") -> dict[str, Any]:
     """指定 Namespace の Pod 一覧を取得する。
 
     Args:
         namespace: 対象 Namespace (空の場合はデフォルト Namespace を使用)
         label_selector: ラベルセレクタ例 "app=ai-agent-orchestrator"
+        site: "asite"/"bsite"/"csite" のいずれか。空文字の場合は
+            このAI Agentが動いているクラスター(自身のドメイン)を対象にする。
     """
-    ns = namespace or _NAMESPACE
-    args = ["get", "pods", "-n", ns, "-o", "wide"]
+    if (err := _validate_site(site)) is not None:
+        return {"error": err, "success": False}
+
+    if not site:
+        ns = namespace or _NAMESPACE
+        args = ["get", "pods", "-n", ns, "-o", "wide"]
+        if label_selector:
+            args += ["-l", label_selector]
+
+        ok, output = _run(args)
+        if not ok:
+            log.error("get_pods.failed", namespace=ns, error=output)
+            return {"error": output, "success": False}
+
+        log.info("get_pods.success", namespace=ns)
+        return {"site": "self", "namespace": ns, "pods": output, "success": True}
+
+    if not namespace:
+        return {"error": "site を指定する場合、namespace も指定してください。", "success": False}
+
+    path = f"/api/v1/namespaces/{namespace}/pods"
     if label_selector:
-        args += ["-l", label_selector]
+        path += f"?labelSelector={label_selector}"
 
-    ok, output = _run(args)
+    ok, data = _site_api_get(site, path)
     if not ok:
-        log.error("get_pods.failed", namespace=ns, error=output)
-        return {"error": output, "success": False}
+        log.error("get_pods.failed", site=site, namespace=namespace, error=data)
+        return {"error": f"Pod一覧取得エラー ({_SITE_DISPLAY_NAMES.get(site, site)}): {data}", "success": False}
 
-    log.info("get_pods.success", namespace=ns)
-    return {"namespace": ns, "pods": output, "success": True}
+    pods = [
+        {
+            "name": item["metadata"]["name"],
+            "phase": item.get("status", {}).get("phase", "unknown"),
+            "ready": all(
+                c.get("ready", False)
+                for c in item.get("status", {}).get("containerStatuses", [])
+            ) if item.get("status", {}).get("containerStatuses") else False,
+            "restarts": sum(
+                c.get("restartCount", 0)
+                for c in item.get("status", {}).get("containerStatuses", [])
+            ),
+        }
+        for item in data.get("items", [])
+    ]
+    return {"site": site, "namespace": namespace, "pods": pods, "success": True}
+
+
+@tool
+def list_services(namespace: str, site: str = "") -> dict[str, Any]:
+    """指定 Namespace の Service 一覧を取得する。
+
+    Args:
+        namespace: 対象 Namespace
+        site: "asite"/"bsite"/"csite" のいずれか。空文字の場合は
+            このAI Agentが動いているクラスター(自身のドメイン)を対象にする。
+    """
+    if (err := _validate_site(site)) is not None:
+        return {"error": err, "success": False}
+
+    if not site:
+        ok, output = _run(["get", "services", "-n", namespace, "-o", "wide"])
+        if not ok:
+            return {"error": output, "success": False}
+        return {"site": "self", "namespace": namespace, "services": output, "success": True}
+
+    ok, data = _site_api_get(site, f"/api/v1/namespaces/{namespace}/services")
+    if not ok:
+        log.error("list_services.failed", site=site, namespace=namespace, error=data)
+        return {"error": f"Service一覧取得エラー ({_SITE_DISPLAY_NAMES.get(site, site)}): {data}", "success": False}
+
+    services = [
+        {
+            "name": item["metadata"]["name"],
+            "type": item.get("spec", {}).get("type", "ClusterIP"),
+            "cluster_ip": item.get("spec", {}).get("clusterIP", ""),
+            "ports": [
+                f"{p.get('port')}:{p.get('targetPort')}/{p.get('protocol', 'TCP')}"
+                for p in item.get("spec", {}).get("ports", [])
+            ],
+        }
+        for item in data.get("items", [])
+    ]
+    return {"site": site, "namespace": namespace, "services": services, "success": True}
+
+
+@tool
+def list_routes(namespace: str, site: str = "") -> dict[str, Any]:
+    """指定 Namespace の Route (OpenShift の外部公開URL) 一覧を取得する。
+
+    Args:
+        namespace: 対象 Namespace
+        site: "asite"/"bsite"/"csite" のいずれか。空文字の場合は
+            このAI Agentが動いているクラスター(自身のドメイン)を対象にする。
+    """
+    if (err := _validate_site(site)) is not None:
+        return {"error": err, "success": False}
+
+    if not site:
+        ok, output = _run(["get", "routes", "-n", namespace, "-o", "wide"])
+        if not ok:
+            return {"error": output, "success": False}
+        return {"site": "self", "namespace": namespace, "routes": output, "success": True}
+
+    ok, data = _site_api_get(
+        site, f"/apis/route.openshift.io/v1/namespaces/{namespace}/routes"
+    )
+    if not ok:
+        log.error("list_routes.failed", site=site, namespace=namespace, error=data)
+        return {"error": f"Route一覧取得エラー ({_SITE_DISPLAY_NAMES.get(site, site)}): {data}", "success": False}
+
+    routes = [
+        {
+            "name": item["metadata"]["name"],
+            "host": item.get("spec", {}).get("host", ""),
+            "to_service": item.get("spec", {}).get("to", {}).get("name", ""),
+            "tls": item.get("spec", {}).get("tls", {}).get("termination", "") if item.get("spec", {}).get("tls") else "",
+        }
+        for item in data.get("items", [])
+    ]
+    return {"site": site, "namespace": namespace, "routes": routes, "success": True}
 
 
 @tool
