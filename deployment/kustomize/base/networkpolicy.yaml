@@ -88,9 +88,21 @@ spec:
     # この許可リストは ELB の IP が変わった際に更新が必要になる点に注意。
     - to:
         - ipBlock:
-            cidr: 13.59.244.2/32    # external-shop-cluster-kafka-asite advertised ELB (AZ1)
+            cidr: 18.119.154.139/32  # external-shop-cluster-kafka-asite advertised ELB (bootstrap AZ1、sandbox780)
         - ipBlock:
-            cidr: 3.132.118.191/32  # external-shop-cluster-kafka-asite advertised ELB (AZ2)
+            cidr: 3.131.194.78/32  # external-shop-cluster-kafka-asite advertised ELB (bootstrap AZ2、sandbox780)
+        - ipBlock:
+            cidr: 18.189.234.206/32  # external-shop-cluster-kafka-asite advertised ELB (broker0 AZ1、sandbox780)
+        - ipBlock:
+            cidr: 3.13.187.72/32  # external-shop-cluster-kafka-asite advertised ELB (broker0 AZ2、sandbox780)
+        - ipBlock:
+            cidr: 18.116.108.240/32  # external-shop-cluster-kafka-asite advertised ELB (broker1 AZ1、sandbox780)
+        - ipBlock:
+            cidr: 18.117.205.137/32  # external-shop-cluster-kafka-asite advertised ELB (broker1 AZ2、sandbox780)
+        - ipBlock:
+            cidr: 18.116.78.10/32  # external-shop-cluster-kafka-asite advertised ELB (broker2 AZ1、sandbox780)
+        - ipBlock:
+            cidr: 3.130.41.83/32  # external-shop-cluster-kafka-asite advertised ELB (broker2 AZ2、sandbox780)
         - ipBlock:
             cidr: 3.136.53.135/32   # external-shop-cluster-kafka-bsite advertised ELB (AZ1)
         - ipBlock:

@@ -23,6 +23,37 @@ OpenMetadata             Quarkus API
           PostgreSQL         Kafka        他システム
 ```
 
+## エージェント構成
+
+`agent/orchestrator/` の LangGraph `StateGraph` が、ユーザー発話を意図分類(`router.py`)して各専門エージェント(`create_react_agent`)にルーティングする。破壊的な Tool 呼び出しは `human_approval_node` で `interrupt_before` により一時停止し、Human-in-the-Loop の承認を経てから実行される。
+
+| エージェント | ディレクトリ | 主な Tool | 承認必須の Tool |
+|---|---|---|---|
+| Orchestrator | `agent/orchestrator/` | (ルーティングのみ、Tool は持たない) | — |
+| Schema Agent | `agent/schema_agent/` | OpenMetadata スキーマ/トピック登録、Kafka トピック作成・削除、GitHub 検索 | Kafka トピック作成・削除など実ブローカーへの書き込みを伴う操作 |
+| Search Agent | `agent/search_agent/` | データ資産検索、リネージ、データ品質メトリクス、顧客/BOM検索、会話履歴検索 | なし(読み取り専用) |
+| Registration Agent | `agent/registration_agent/` | 顧客/BOM の登録・検索・更新(Business API 経由) | `update_customer`, `register_bom` |
+| Platform Ops Agent | `agent/platform-ops-agent/` | OpenShift(Pod/Deployment/Route/複数サイト状態確認)、Git(検索/コミット/ブランチ作成)、Filesystem(読み取り/検索/書き込み) | `restart_deployment`, `scale_deployment`, `apply_manifest`, `git_commit`, `git_create_branch`, `write_file` |
+
+Chitchat(挨拶等)は `router.py` のキーワードパターンで最優先に検出し、LLM/Tool を介さず固定応答するノードに直接ルーティングする(ReAct ループによる無駄な往復を避けるため)。
+
+### 未接続の Platform Ops Agent
+
+`platform-ops-agent` は実装済みで `router.py` の意図分類にも `platform_ops` として登録されているが、**`agent/orchestrator/graph.py` の `StateGraph` にはまだノードとして追加されていない**。そのため現時点では `platform_ops` 意図にルーティングされても実行はされない。オーケストレーターへの組み込みが未完了。
+
+### 未実装のエージェント(ディレクトリのみ存在)
+
+以下は `agent/` 配下にディレクトリのみ作成されており、まだ中身(`agent.py`)が実装されていない:
+
+```
+agent/coding-agent/
+agent/governance-agent/
+agent/operations-agent/
+agent/planning-agent/
+agent/validation-agent/
+agent/workflow-agent/
+```
+
 ## ガードレールアーキテクチャ
 ```
 
