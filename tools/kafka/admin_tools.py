@@ -366,7 +366,7 @@ def topic_exists(topic_name: str, service_name: str) -> dict:
 
 @tool
 def create_kafka_topic(
-    topic_name: str, service_name: str, partitions: int = 1, replication_factor: int = 1, managed: bool = False,
+    topic_name: str, service_name: str, partitions: int = 10, replication_factor: int = 1, managed: bool = True,
 ) -> dict:
     """
     対象サイトの実際の Kafka ブローカー上にトピックを作成します。
@@ -380,14 +380,16 @@ def create_kafka_topic(
             Aサイト: "external-shop-cluster-kafka-asite:9094"
             Bサイト: "external-shop-cluster-kafka-bsite:9094"
             Cサイト: "external-shop-cluster-kafka-csite:9094"
-        partitions: パーティション数 (デフォルト1)
+        partitions: パーティション数 (デフォルト10。ユーザーが明示的に別の値を
+            指定した場合のみそれに従うこと)
         replication_factor: レプリケーションファクタ (デフォルト1)
-        managed: true の場合、kafka-topics.sh によるブローカー直接作成ではなく、
-            KafkaTopic カスタムリソース (Strimzi Topic Operator 管理) を
-            作成/更新する。GitOps的にトピックをK8sリソースとして管理したい
-            場合に指定する (対象サイトのK8s API認証情報が必要、未設定の場合は
-            エラーを返す)。false (デフォルト) の場合は従来通りブローカーへの
-            直接CLI作成のみ。
+        managed: true (デフォルト) の場合、kafka-topics.sh によるブローカー
+            直接作成ではなく、KafkaTopic カスタムリソース (Strimzi Topic
+            Operator 管理) を作成/更新する。GitOps的にトピックをK8sリソース
+            として管理する標準運用のため、ユーザーが明示的に「直接作成」等を
+            指定しない限り常に true のままにすること。false の場合は
+            kafka-topics.sh によるブローカーへの直接CLI作成になる
+            (対象サイトのK8s API認証情報が未設定の場合、managed=true はエラーを返す)。
     """
     bootstrap = _SITE_BOOTSTRAP_SERVERS.get(service_name)
     if not bootstrap:
