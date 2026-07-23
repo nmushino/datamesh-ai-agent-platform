@@ -234,6 +234,25 @@ def _already_confirmed(topic_name: str, prior_messages: list) -> bool:
     )
 
 
+# NOTE: RHDH (Developer Hub) の Scaffolder テンプレート (kafka:topic:request
+# アクション) 経由のリクエストは、対話的なチャットとは異なり人間がその場で
+# 承認メッセージに返信することができない(scaffolderは/api/v1/chatで依頼を
+# 送信した後、requires_approval=trueの場合に/api/v1/approveを1回呼ぶだけの
+# 一方向フロー)。この経路のリクエストは、開発者がScaffolderテンプレートを
+# 実行した時点で既に「対象サイトの実ブローカーにトピックを作成する」意思
+# 表示が済んでいるとみなし、_CONFIRM_BEFORE_EXECUTE_TOOLS の確認ゲート自体を
+# スキップして自動承認済み扱いにする。buildRequestMessage (RHDHプラグイン側)
+# が生成する固定の先頭文言をマーカーとして判定する。
+_RHDH_REQUEST_MARKER = "Developer Hub からのトピック作成依頼です。"
+
+
+def _is_rhdh_request(prior_messages: list) -> bool:
+    return any(
+        isinstance(m, HumanMessage) and str(m.content).startswith(_RHDH_REQUEST_MARKER)
+        for m in prior_messages
+    )
+
+
 def _topic_already_created_on_broker(topic_name: str, service_name: str, prior_messages: list) -> bool:
     for m in prior_messages:
         if isinstance(m, ToolMessage) and m.name == "create_kafka_topic":
@@ -372,7 +391,8 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
         pending_tc = next(
             (tc for tc in tool_calls
              if tc["name"] in _CONFIRM_BEFORE_EXECUTE_TOOLS
-             and not _already_confirmed(tc["args"].get("topic_name", ""), messages[:-1])),
+             and not _already_confirmed(tc["args"].get("topic_name", ""), messages[:-1])
+             and not _is_rhdh_request(messages[:-1])),
             None,
         )
         if pending_tc:
