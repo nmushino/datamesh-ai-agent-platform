@@ -121,3 +121,23 @@ subjects:
   - kind: ServiceAccount
     name: tekton-triggers-sa
     namespace: ai-agent-cicd
+---
+# EventListener は ClusterInterceptor / ClusterTriggerBinding など
+# クラスタスコープのリソースも list/watch する必要があるが、上の RoleBinding
+# (namespace スコープ) だけでは付与されず、
+# "clusterinterceptors.triggers.tekton.dev is forbidden ... at the cluster scope"
+# で informer の初期化に失敗し el-github-event-listener が CrashLoopBackOff に
+# なっていた (2026-07-22, sandbox39 で発生・原因調査済み)。
+# ClusterRoleBinding で明示的に付与する。
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tekton-triggers-sa-ai-agent-cicd-clusterroles
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: tekton-triggers-eventlistener-clusterroles
+subjects:
+  - kind: ServiceAccount
+    name: tekton-triggers-sa
+    namespace: ai-agent-cicd

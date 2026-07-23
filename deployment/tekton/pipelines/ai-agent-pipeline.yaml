@@ -136,6 +136,29 @@ spec:
         - name: source
           workspace: shared-workspace
 
+    # :dev タグ付け。overlays/dev の Deployment は :dev を静的参照しているが
+    # build-image は commit SHA タグしか push しない (enable-gitops-commit は
+    # デフォルト無効) ため、そのままでは ImagePullBackOff (manifest unknown) に
+    # なる (2026-07-22 sandbox39 で発生・原因調査済み)。pipeline SA は
+    # ImageStream の tag 操作権限を持つため oc tag で解決する。
+    - name: tag-dev
+      runAfter:
+        - image-scan
+      taskRef:
+        resolver: cluster
+        params:
+          - name: kind
+            value: task
+          - name: name
+            value: openshift-client
+          - name: namespace
+            value: openshift-pipelines
+      params:
+        - name: SCRIPT
+          value: |
+            oc tag ai-agent-platform/ai-agent-orchestrator:$(tasks.git-clone.results.COMMIT) \
+              ai-agent-platform/ai-agent-orchestrator:dev
+
     # ⑥ Kustomize の image タグを更新して GitOps でデプロイ (任意)
     - name: update-gitops
       runAfter:

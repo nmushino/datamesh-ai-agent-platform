@@ -139,6 +139,56 @@ def _set_mm2_pause(site: str, pause: bool) -> dict:
         return {"site": site, "paused": None, "success": False, "error": str(e)}
 
 
+_STRIMZI_KAFKA_CLUSTER_NAME = "shop-cluster"
+
+
+def _apply_kafkatopic_cr(site: str, topic_name: str, partitions: int, replication_factor: int) -> dict:
+    """<site> に KafkaTopic カスタムリソース(Strimzi Topic Operator管理)を作成/更新する。
+    Topic Operator がこの CR を正として実ブローカー上にトピックを反映する
+    (create_kafka_topic の managed=True 経路)。認証情報が無い場合は失敗として返す
+    (CLI直接作成へのフォールバックは呼び出し元の判断に委ねる)。"""
+    config = _mm2_api_config(site)
+    if config is None:
+        return {"site": site, "applied": False, "success": False, "error": "K8s API 認証情報が未設定"}
+
+    api_server, token = config
+    url = f"{api_server}/apis/kafka.strimzi.io/v1/namespaces/{_MM2_NAMESPACE}/kafkatopics/{topic_name}"
+    body = {
+        "apiVersion": "kafka.strimzi.io/v1",
+        "kind": "KafkaTopic",
+        "metadata": {
+            "name": topic_name,
+            "namespace": _MM2_NAMESPACE,
+            "labels": {"strimzi.io/cluster": _STRIMZI_KAFKA_CLUSTER_NAME},
+        },
+        "spec": {
+            "partitions": partitions,
+            "replicas": replication_factor,
+        },
+    }
+    try:
+        # NOTE: apply 相当 (Server-Side Apply) で新規作成/既存更新の両方に対応する。
+        # force=true を付けないと既存 CR (他アクターが作成したフィールド) との
+        # 所有権競合で 409 Conflict になることがあるため付与する。
+        resp = httpx.patch(
+            url,
+            params={"fieldManager": "ai-agent-orchestrator", "force": "true"},
+            json=body,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/apply-patch+yaml",
+            },
+            verify=False,
+            timeout=_MM2_API_TIMEOUT_SECONDS,
+        )
+        resp.raise_for_status()
+        log.info("kafkatopic_cr_applied", site=site, topic_name=topic_name, partitions=partitions, replication_factor=replication_factor)
+        return {"site": site, "applied": True, "success": True}
+    except Exception as e:
+        log.error("kafkatopic_cr_apply_failed", site=site, topic_name=topic_name, error=str(e))
+        return {"site": site, "applied": False, "success": False, "error": str(e)}
+
+
 def _delete_kafkatopic_cr(site: str, topic_name: str) -> dict:
     """<site> の KafkaTopic カスタムリソース(Strimzi Topic Operator管理)を削除する。
     Topic Operator は KafkaTopic CR を正とみなし、ブローカー上のトピックが
@@ -315,7 +365,9 @@ def topic_exists(topic_name: str, service_name: str) -> dict:
 
 
 @tool
-def create_kafka_topic(topic_name: str, service_name: str, partitions: int = 1, replication_factor: int = 1) -> dict:
+def create_kafka_topic(
+    topic_name: str, service_name: str, partitions: int = 1, replication_factor: int = 1, managed: bool = False,
+) -> dict:
     """
     対象サイトの実際の Kafka ブローカー上にトピックを作成します。
     (OpenMetadata へのメタデータ登録とは別処理。新しいトピックを求められた
@@ -330,6 +382,12 @@ def create_kafka_topic(topic_name: str, service_name: str, partitions: int = 1, 
             Cサイト: "external-shop-cluster-kafka-csite:9094"
         partitions: パーティション数 (デフォルト1)
         replication_factor: レプリケーションファクタ (デフォルト1)
+        managed: true の場合、kafka-topics.sh によるブローカー直接作成ではなく、
+            KafkaTopic カスタムリソース (Strimzi Topic Operator 管理) を
+            作成/更新する。GitOps的にトピックをK8sリソースとして管理したい
+            場合に指定する (対象サイトのK8s API認証情報が必要、未設定の場合は
+            エラーを返す)。false (デフォルト) の場合は従来通りブローカーへの
+            直接CLI作成のみ。
     """
     bootstrap = _SITE_BOOTSTRAP_SERVERS.get(service_name)
     if not bootstrap:
@@ -337,6 +395,26 @@ def create_kafka_topic(topic_name: str, service_name: str, partitions: int = 1, 
             "error": f"未知の service_name: {service_name}。"
                      f"利用可能な値: {list(_SITE_BOOTSTRAP_SERVERS.keys())}",
             "success": False,
+        }
+
+    if managed:
+        short_name = _SITE_SHORT_NAMES.get(service_name, service_name)
+        log.info("create_kafka_topic_managed", topic_name=topic_name, service_name=service_name, site=short_name)
+        cr_result = _apply_kafkatopic_cr(short_name, topic_name, partitions, replication_factor)
+        if not cr_result["success"]:
+            return {
+                "error": f"KafkaTopic CR 作成エラー ({short_name}): {cr_result.get('error')}",
+                "topic_name": topic_name,
+                "service_name": service_name,
+                "success": False,
+            }
+        return {
+            "topic_name": topic_name,
+            "service_name": service_name,
+            "created": True,
+            "managed": True,
+            "message": "KafkaTopic CR (Strimzi Topic Operator管理) として作成/更新しました",
+            "success": True,
         }
 
     log.info("create_kafka_topic", topic_name=topic_name, service_name=service_name, bootstrap=bootstrap)

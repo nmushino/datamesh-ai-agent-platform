@@ -103,6 +103,13 @@ spec:
             cidr: 18.116.78.10/32  # external-shop-cluster-kafka-asite advertised ELB (broker2 AZ1、sandbox780)
         - ipBlock:
             cidr: 3.130.41.83/32  # external-shop-cluster-kafka-asite advertised ELB (broker2 AZ2、sandbox780)
+        # asite ELB が IP を再割り当て (2026-07-22 確認、listTopics/createTopics が
+        # "Timed out waiting for a node assignment" で失敗する原因だった)。
+        # 上の8個の旧IPは残置し、新IPを追加する形で復旧。
+        - ipBlock:
+            cidr: 18.224.111.6/32  # external-shop-cluster-kafka-asite advertised ELB (再割り当て後、sandbox780)
+        - ipBlock:
+            cidr: 3.131.50.88/32  # external-shop-cluster-kafka-asite advertised ELB (再割り当て後、sandbox780)
         - ipBlock:
             cidr: 3.136.53.135/32   # external-shop-cluster-kafka-bsite advertised ELB (AZ1)
         - ipBlock:
