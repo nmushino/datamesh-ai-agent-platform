@@ -102,7 +102,7 @@ _TOOL_STATUS_LABELS = {
 }
 
 
-_MAX_TOOL_ITERATIONS = 8
+_MAX_TOOL_ITERATIONS = 16
 
 TRUNCATION_NOTICE = (
     "\n\n⚠️ 応答が長いため、規定回数の自動継続後もまだ途中です。"
