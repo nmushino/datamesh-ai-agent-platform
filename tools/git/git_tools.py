@@ -38,7 +38,7 @@ def _run_git(args: list[str], cwd: str, timeout: int = 30) -> tuple[bool, str]:
     try:
         result = subprocess.run(
             [_GIT_CMD, *args], cwd=cwd,
-            capture_output=True, text=True, timeout=timeout
+            capture_output=True, text=True, timeout=timeout, check=False
         )
         if result.returncode == 0:
             return True, result.stdout.strip()

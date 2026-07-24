@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
 from typing import Literal
+
 import structlog
 from langchain_core.tools import tool
+
 from tools.common.client import get_openmetadata_client
 
 log = structlog.get_logger()
@@ -72,7 +74,7 @@ def search_data_assets(
         return result
     except Exception as e:
         log.error("search_data_assets_failed", query=query, error=str(e))
-        return {"error": f"検索エラー: {str(e)}", "success": False}
+        return {"error": f"検索エラー: {e!s}", "success": False}
 
 
 def _to_asset_dict(r: dict, default_type: str, description_max_chars: int) -> dict:
@@ -129,7 +131,7 @@ def get_recent_activity(limit: int = 10) -> dict:
         return {"assets": assets, "total": len(assets), "success": True}
     except Exception as e:
         log.error("get_recent_activity_failed", error=str(e))
-        return {"error": f"取得エラー: {str(e)}", "success": False}
+        return {"error": f"取得エラー: {e!s}", "success": False}
 
 
 @tool
@@ -152,7 +154,7 @@ def get_topic_sample_data(topic_fqn: str, limit: int = 5) -> dict:
         return {"fqn": topic_fqn, "messages": messages, "total": len(messages), "success": True}
     except Exception as e:
         log.error("get_topic_sample_data_failed", topic_fqn=topic_fqn, error=str(e))
-        return {"error": f"サンプルデータ取得エラー: {str(e)}", "success": False}
+        return {"error": f"サンプルデータ取得エラー: {e!s}", "success": False}
 
 
 @tool
@@ -188,4 +190,4 @@ def get_my_data_assets(owner_name: str, limit: int = 10) -> dict:
         }
     except Exception as e:
         log.error("get_my_data_assets_failed", owner_name=owner_name, error=str(e))
-        return {"error": f"取得エラー: {str(e)}", "success": False}
+        return {"error": f"取得エラー: {e!s}", "success": False}

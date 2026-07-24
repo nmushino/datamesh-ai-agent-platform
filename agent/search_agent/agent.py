@@ -1,18 +1,20 @@
 from pathlib import Path
+
 from langgraph.prebuilt import create_react_agent
+
 from agent.common.llm import get_llm
+from tools.business import search_bom, search_customers
 from tools.openmetadata import (
-    search_data_assets,
-    get_recent_activity,
-    get_my_data_assets,
-    get_topic_sample_data,
-    get_database_schema,
     get_data_lineage,
-    get_quality_metrics,
     get_data_quality_overview,
+    get_database_schema,
+    get_my_data_assets,
+    get_quality_metrics,
+    get_recent_activity,
+    get_topic_sample_data,
     search_conversation_history,
+    search_data_assets,
 )
-from tools.business import search_customers, search_bom
 
 SYSTEM_PROMPT = (Path(__file__).parent.parent.parent / "prompts/search/system.md").read_text()
 

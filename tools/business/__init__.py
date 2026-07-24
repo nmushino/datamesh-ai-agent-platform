@@ -1,12 +1,17 @@
-from .customer_tools import register_customer, search_customers, get_customer, update_customer
-from .bom_tools import register_bom, search_bom, get_bom
+from .bom_tools import get_bom, register_bom, search_bom
+from .customer_tools import (
+    get_customer,
+    register_customer,
+    search_customers,
+    update_customer,
+)
 
 __all__ = [
-    "register_customer",
-    "search_customers",
-    "get_customer",
-    "update_customer",
-    "register_bom",
-    "search_bom",
     "get_bom",
+    "get_customer",
+    "register_bom",
+    "register_customer",
+    "search_bom",
+    "search_customers",
+    "update_customer",
 ]

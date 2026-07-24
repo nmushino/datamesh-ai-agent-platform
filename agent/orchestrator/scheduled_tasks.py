@@ -165,7 +165,9 @@ class ScheduledTaskBridge:
         """実ブローカーへの接続エラーは頻発しがち(Skupperリンク切断時など)で、
         定期チェック実行履歴パネルに出すとノイズになるため通知ベルのみに出す
         (履歴パネル用の _recent には追加しない)。"""
-        from agent.orchestrator.notifications import get_bridge as get_notification_bridge
+        from agent.orchestrator.notifications import (
+            get_bridge as get_notification_bridge,
+        )
         log.error("scheduled_task_broker_check_failed", service_name=service_name, error=str(error))
         try:
             get_notification_bridge().push({
@@ -225,7 +227,11 @@ class ScheduledTaskBridge:
 
         keyword = "".join(part.capitalize() for part in topic_name.replace("_", "-").split("-"))
         try:
-            from tools.github.github_tools import list_github_org_repos, find_github_files_by_name, get_github_file_content
+            from tools.github.github_tools import (
+                find_github_files_by_name,
+                get_github_file_content,
+                list_github_org_repos,
+            )
 
             repos_result = list_github_org_repos.invoke({})
             if not repos_result.get("success"):
@@ -374,7 +380,9 @@ class ScheduledTaskBridge:
     def _notify_error(self, record: dict) -> None:
         """定期チェックのエラーは実行履歴パネルだけでなく通知ベルにも
         表示する(見落としを防ぐため)。"""
-        from agent.orchestrator.notifications import get_bridge as get_notification_bridge
+        from agent.orchestrator.notifications import (
+            get_bridge as get_notification_bridge,
+        )
         try:
             get_notification_bridge().push({
                 "pipeline": record.get("task_name", "scheduled_task"),

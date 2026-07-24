@@ -1,28 +1,32 @@
 import asyncio
+import base64
 import json
 import os
 import queue
-import time
 import uuid
+from contextlib import ExitStack, asynccontextmanager
+
 import structlog
-from contextlib import asynccontextmanager, ExitStack
-import base64
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.postgres import PostgresSaver
+from pydantic import BaseModel
 
-from dotenv import load_dotenv
 load_dotenv()
 
-from agent.common.llm import MAX_TOKENS_LEVELS, DEFAULT_MAX_TOKENS_LEVEL  # noqa: E402
-from agent.orchestrator.graph import create_graph, _status_queue_var  # noqa: E402
-from agent.orchestrator.notifications import get_bridge as get_notification_bridge  # noqa: E402
-from agent.orchestrator.scheduled_tasks import get_bridge as get_scheduled_task_bridge  # noqa: E402
-from tools.common.history_store import get_history_store  # noqa: E402
-from tools.common.settings_store import get_settings_store  # noqa: E402
+from agent.common.llm import DEFAULT_MAX_TOKENS_LEVEL, MAX_TOKENS_LEVELS
+from agent.orchestrator.graph import _status_queue_var, create_graph
+from agent.orchestrator.notifications import (
+    get_bridge as get_notification_bridge,
+)
+from agent.orchestrator.scheduled_tasks import (
+    get_bridge as get_scheduled_task_bridge,
+)
+from tools.common.history_store import get_history_store
+from tools.common.settings_store import get_settings_store
 
 log = structlog.get_logger()
 
@@ -71,7 +75,7 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 last_error = e
                 log.warning("db_connect_retry", attempt=attempt, error=str(e))
-                time.sleep(5)
+                await asyncio.sleep(5)
         if last_error:
             raise last_error
 
@@ -329,7 +333,7 @@ def approve(req: ApprovalRequest):
         return {"thread_id": req.thread_id, "status": "approved", "reply": reply}
     except Exception as e:
         log.error("approval_resume_failed", error=str(e))
-        raise HTTPException(500, f"承認後の実行エラー: {str(e)}")
+        raise HTTPException(500, f"承認後の実行エラー: {e!s}")
 
 
 @app.get("/api/v1/notifications/recent")

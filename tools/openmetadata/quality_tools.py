@@ -1,6 +1,8 @@
 from typing import Literal
+
 import structlog
 from langchain_core.tools import tool
+
 from tools.common.client import get_openmetadata_client
 
 log = structlog.get_logger()
@@ -61,7 +63,7 @@ def create_quality_rule(
         return {"ruleName": rule_name, "created": True, "result": result, "success": True}
     except Exception as e:
         log.error("create_quality_rule_failed", error=str(e))
-        return {"error": f"品質ルール作成エラー: {str(e)}", "success": False}
+        return {"error": f"品質ルール作成エラー: {e!s}", "success": False}
 
 
 @tool
@@ -99,7 +101,7 @@ def get_data_quality_overview() -> dict:
         }
     except Exception as e:
         log.error("get_data_quality_overview_failed", error=str(e))
-        return {"error": f"データ品質サマリ取得エラー: {str(e)}", "success": False}
+        return {"error": f"データ品質サマリ取得エラー: {e!s}", "success": False}
 
 
 @tool

@@ -1,5 +1,6 @@
 import structlog
 from langchain_core.tools import tool
+
 from tools.common.client import get_openmetadata_client
 
 log = structlog.get_logger()
@@ -43,4 +44,4 @@ def get_data_lineage(fqn: str, depth: int = 3) -> dict:
         return {"error": str(e), "success": False}
     except Exception as e:
         log.error("get_data_lineage_failed", fqn=fqn, error=str(e))
-        return {"error": f"リネージ取得エラー: {str(e)}", "success": False}
+        return {"error": f"リネージ取得エラー: {e!s}", "success": False}

@@ -38,7 +38,7 @@ def _run(args: list[str], timeout: int = 30) -> tuple[bool, str]:
     cmd = [_OC_CMD, *args]
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout
+            cmd, capture_output=True, text=True, timeout=timeout, check=False
         )
         if result.returncode == 0:
             return True, result.stdout.strip()
@@ -418,8 +418,8 @@ def apply_manifest(yaml_content: str, namespace: str = "") -> dict[str, Any]:
         yaml_content: 適用する YAML 文字列
         namespace: 対象 Namespace (YAML 内の namespace より優先)
     """
-    import tempfile
     import pathlib
+    import tempfile
 
     ns = namespace or _NAMESPACE
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:

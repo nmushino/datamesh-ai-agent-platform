@@ -1,7 +1,7 @@
 import os
+
 from langchain_core.messages import BaseMessage
 from langchain_openai import ChatOpenAI
-
 
 # vLLM 起動時の --max-model-len。入力(システムプロンプト+会話履歴+ツール結果)
 # と出力(max_tokens)の合計がこれを超えると 400 エラーになるか、応答生成の

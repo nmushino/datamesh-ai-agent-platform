@@ -1,0 +1,8 @@
+[lint]
+# BLE001 (blind-except): このプロジェクトの Tool 実装ルール (CLAUDE.md 参照) では、
+# Tool 関数は例外を決して送出せず、必ず {"error": str(e), "success": False} という
+# dict を返すことを必須としている(送出すると呼び出し元の LangChain/LangGraph 経由で
+# LLM のエージェントループが壊れるため)。想定外の例外型を漏らさず確実に dict へ
+# 変換するには broad な `except Exception` が必要であり、これは意図的な設計であって
+# 個別に narrow な except へ書き換えるべきバグではない。
+ignore = ["BLE001"]

@@ -1,4 +1,5 @@
 import re
+
 from agent.common.state import AgentState
 
 # キーワードベースの意図分類

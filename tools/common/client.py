@@ -1,18 +1,19 @@
 import json
 import os
-import httpx
-import structlog
 from functools import lru_cache
+from typing import ClassVar
 from urllib.parse import quote_plus
 
-from metadata.ingestion.ometa.ometa_api import OpenMetadata
+import httpx
+import structlog
 from metadata.generated.schema.entity.services.connections.metadata.openMetadataConnection import (
-    OpenMetadataConnection,
     AuthProvider,
+    OpenMetadataConnection,
 )
 from metadata.generated.schema.security.client.openMetadataJWTClientConfig import (
     OpenMetadataJWTClientConfig,
 )
+from metadata.ingestion.ometa.ometa_api import OpenMetadata
 
 log = structlog.get_logger()
 
@@ -55,7 +56,7 @@ class OpenMetadataClientWrapper:
     # 含まれる。これらが limit 件数の枠を消費し、実データ資産(特にテーブル)が
     # 押し出されて表示されなくなる事象があったため、"all" 検索時はクライアント側で
     # 除外する。
-    _DATA_ASSET_ENTITY_TYPES = {"table", "topic", "pipeline", "dataProduct"}
+    _DATA_ASSET_ENTITY_TYPES: ClassVar[set[str]] = {"table", "topic", "pipeline", "dataProduct"}
 
     def search_assets(self, query: str, asset_type: str = "all", limit: int = 10) -> list[dict]:
         # es_search_from_fqn requires an actual entity class (e.g. Table) since it keys
@@ -191,7 +192,9 @@ class OpenMetadataClientWrapper:
         return parsed
 
     def create_test_case(self, test_case: dict) -> dict:
-        from metadata.generated.schema.api.tests.createTestCase import CreateTestCaseRequest
+        from metadata.generated.schema.api.tests.createTestCase import (
+            CreateTestCaseRequest,
+        )
         result = self._client.create_or_update(data=CreateTestCaseRequest(**test_case))
         return result.dict()
 

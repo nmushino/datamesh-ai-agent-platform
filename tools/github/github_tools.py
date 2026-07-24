@@ -65,7 +65,7 @@ def find_github_files_by_name(repo: str, name_keyword: str, max_results: int = 2
         return {"repo": repo, "paths": matches[:max_results], "total": len(matches), "success": True}
     except Exception as e:
         log.error("find_github_files_by_name_failed", repo=repo, name_keyword=name_keyword, error=str(e))
-        return {"error": f"ファイル検索エラー: {str(e)}", "success": False}
+        return {"error": f"ファイル検索エラー: {e!s}", "success": False}
 
 
 @tool
@@ -93,7 +93,7 @@ def get_github_file_content(repo: str, path: str) -> dict:
         return {"repo": repo, "path": path, "content": content[:MAX_CHARS], "success": True}
     except Exception as e:
         log.error("get_github_file_content_failed", repo=repo, path=path, error=str(e))
-        return {"error": f"ファイル取得エラー: {str(e)}", "success": False}
+        return {"error": f"ファイル取得エラー: {e!s}", "success": False}
 
 
 @tool
@@ -120,7 +120,7 @@ def get_github_readme(repo: str) -> dict:
         return {"repo": repo, "content": content[:MAX_CHARS], "success": True}
     except Exception as e:
         log.error("get_github_readme_failed", repo=repo, error=str(e))
-        return {"error": f"README取得エラー: {str(e)}", "success": False}
+        return {"error": f"README取得エラー: {e!s}", "success": False}
 
 
 @tool
@@ -141,4 +141,4 @@ def list_github_org_repos() -> dict:
         return {"repos": repos, "total": len(repos), "success": True}
     except Exception as e:
         log.error("list_github_org_repos_failed", error=str(e))
-        return {"error": f"リポジトリ一覧取得エラー: {str(e)}", "success": False}
+        return {"error": f"リポジトリ一覧取得エラー: {e!s}", "success": False}

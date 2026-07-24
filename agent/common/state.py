@@ -1,5 +1,6 @@
-from typing import Annotated, TypedDict
 import operator
+from typing import Annotated, TypedDict
+
 from langchain_core.messages import BaseMessage
 
 

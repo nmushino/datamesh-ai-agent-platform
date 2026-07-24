@@ -27,4 +27,4 @@ def search_conversation_history(owner_name: str, query: str, limit: int = 5) -> 
         return {"results": results, "total": len(results), "success": True}
     except Exception as e:
         log.error("search_conversation_history_failed", error=str(e))
-        return {"error": f"検索エラー: {str(e)}", "success": False}
+        return {"error": f"検索エラー: {e!s}", "success": False}

@@ -1,5 +1,6 @@
 import structlog
 from langchain_core.tools import tool
+
 from tools.common.client import get_openmetadata_client
 
 log = structlog.get_logger()
@@ -32,7 +33,7 @@ def get_database_schema(
         return {"fqn": fqn, "schema": schema, "tables": tables, "success": True}
     except Exception as e:
         log.error("get_database_schema_failed", fqn=fqn, error=str(e))
-        return {"error": f"スキーマ取得エラー: {str(e)}", "success": False}
+        return {"error": f"スキーマ取得エラー: {e!s}", "success": False}
 
 
 @tool
@@ -102,7 +103,7 @@ def register_table_metadata(
         return {"error": str(e), "success": False}
     except Exception as e:
         log.error("register_table_metadata_failed", fqn=fqn, error=str(e))
-        return {"error": f"メタデータ登録エラー: {str(e)}", "success": False}
+        return {"error": f"メタデータ登録エラー: {e!s}", "success": False}
 
 
 @tool
@@ -145,7 +146,7 @@ def register_topic_metadata(
         return {"fqn": fqn, "created": True, "result": result, "success": True}
     except Exception as e:
         log.error("register_topic_metadata_failed", topic_name=topic_name, error=str(e))
-        return {"error": f"トピック登録エラー: {str(e)}", "success": False}
+        return {"error": f"トピック登録エラー: {e!s}", "success": False}
 
 
 @tool
@@ -176,7 +177,7 @@ def register_glossary_term(
         return {"term": term_name, "fqn": result.get("fullyQualifiedName", ""), "created": True, "success": True}
     except Exception as e:
         log.error("register_glossary_term_failed", term_name=term_name, error=str(e))
-        return {"error": f"用語登録エラー: {str(e)}", "success": False}
+        return {"error": f"用語登録エラー: {e!s}", "success": False}
 
 
 @tool

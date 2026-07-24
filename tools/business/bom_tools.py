@@ -1,6 +1,7 @@
-import structlog
 import httpx
+import structlog
 from langchain_core.tools import tool
+
 from tools.common.client import get_business_api_client
 
 log = structlog.get_logger()

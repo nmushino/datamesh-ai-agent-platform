@@ -96,7 +96,8 @@ def search_files(
                 text = p.read_text(encoding="utf-8", errors="ignore")
                 if content_keyword not in text:
                     continue
-            except Exception:
+            except Exception as e:
+                log.warning("search_files.read_failed", path=str(p), error=str(e))
                 continue
 
         matches.append(str(p.relative_to(base)))

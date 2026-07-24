@@ -1,3 +1,3 @@
-from .client import OpenMetadataClientWrapper, BusinessApiClient
+from .client import BusinessApiClient, OpenMetadataClientWrapper
 
-__all__ = ["OpenMetadataClientWrapper", "BusinessApiClient"]
+__all__ = ["BusinessApiClient", "OpenMetadataClientWrapper"]

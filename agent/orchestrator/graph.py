@@ -1,15 +1,19 @@
 import json
 import re
+
 import structlog
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
-from langgraph.graph import StateGraph, END
+from langgraph.graph import END, StateGraph
 
-from agent.common.state import AgentState
 from agent.common.llm import get_llm, sum_tokens
+from agent.common.state import AgentState
 from agent.orchestrator.router import classify_intent_detailed, route_to_agent
-from agent.schema_agent.agent import SCHEMA_TOOLS, SYSTEM_PROMPT as SCHEMA_SYSTEM_PROMPT
-from agent.search_agent.agent import SEARCH_TOOLS, SYSTEM_PROMPT as SEARCH_SYSTEM_PROMPT
-from agent.registration_agent.agent import REGISTRATION_TOOLS, SYSTEM_PROMPT as REGISTRATION_SYSTEM_PROMPT
+from agent.registration_agent.agent import REGISTRATION_TOOLS
+from agent.registration_agent.agent import SYSTEM_PROMPT as REGISTRATION_SYSTEM_PROMPT
+from agent.schema_agent.agent import SCHEMA_TOOLS
+from agent.schema_agent.agent import SYSTEM_PROMPT as SCHEMA_SYSTEM_PROMPT
+from agent.search_agent.agent import SEARCH_TOOLS
+from agent.search_agent.agent import SYSTEM_PROMPT as SEARCH_SYSTEM_PROMPT
 from tools.common.status import status_queue_var
 
 log = structlog.get_logger()

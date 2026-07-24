@@ -4,8 +4,9 @@
 CI では SKIP_OPENSHIFT_TESTS=true を設定してスキップ可能。
 """
 import os
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 pytestmark = pytest.mark.integration
 
@@ -161,10 +162,12 @@ class TestGetPodsSite:
                 }
             ]
         }
-        with patch.dict(os.environ, {"ASITE_K8S_API_SERVER": "https://a", "ASITE_K8S_TOKEN": "tok"}, clear=False):
-            with patch("tools.openshift.openshift_tools._site_api_get") as mock_get:
-                mock_get.return_value = (True, fake_response)
-                result = get_pods.invoke({"site": "asite", "namespace": "quarkusdroneshop-demo"})
+        with (
+            patch.dict(os.environ, {"ASITE_K8S_API_SERVER": "https://a", "ASITE_K8S_TOKEN": "tok"}, clear=False),
+            patch("tools.openshift.openshift_tools._site_api_get") as mock_get,
+        ):
+            mock_get.return_value = (True, fake_response)
+            result = get_pods.invoke({"site": "asite", "namespace": "quarkusdroneshop-demo"})
 
         assert result["success"] is True
         assert result["pods"][0]["name"] == "qdca10-abc"
@@ -193,10 +196,12 @@ class TestListServicesAndRoutes:
                 }
             ]
         }
-        with patch.dict(os.environ, {"BSITE_K8S_API_SERVER": "https://b", "BSITE_K8S_TOKEN": "tok"}, clear=False):
-            with patch("tools.openshift.openshift_tools._site_api_get") as mock_get:
-                mock_get.return_value = (True, fake_response)
-                result = list_routes.invoke({"site": "bsite", "namespace": "quarkusdroneshop-demo"})
+        with (
+            patch.dict(os.environ, {"BSITE_K8S_API_SERVER": "https://b", "BSITE_K8S_TOKEN": "tok"}, clear=False),
+            patch("tools.openshift.openshift_tools._site_api_get") as mock_get,
+        ):
+            mock_get.return_value = (True, fake_response)
+            result = list_routes.invoke({"site": "bsite", "namespace": "quarkusdroneshop-demo"})
 
         assert result["success"] is True
         assert result["routes"][0]["host"] == "web-quarkusdroneshop-demo.apps.example.com"

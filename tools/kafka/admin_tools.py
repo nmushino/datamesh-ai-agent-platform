@@ -318,6 +318,7 @@ def list_broker_topics(bootstrap: str) -> set[str]:
         capture_output=True,
         text=True,
         timeout=_CMD_TIMEOUT_SECONDS,
+        check=False,
     )
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip())
@@ -354,7 +355,7 @@ def topic_exists(topic_name: str, service_name: str) -> dict:
         return {"error": f"トピック存在確認エラー ({bootstrap}): コマンドがタイムアウトしました", "success": False}
     except Exception as e:
         log.error("topic_exists_check_failed", topic_name=topic_name, service_name=service_name, error=str(e))
-        return {"error": f"トピック存在確認エラー ({bootstrap}): {str(e)}", "success": False}
+        return {"error": f"トピック存在確認エラー ({bootstrap}): {e!s}", "success": False}
 
     return {
         "topic_name": topic_name,
@@ -433,13 +434,14 @@ def create_kafka_topic(
             capture_output=True,
             text=True,
             timeout=_CMD_TIMEOUT_SECONDS,
+            check=False,
         )
     except subprocess.TimeoutExpired:
         log.error("create_kafka_topic_failed", topic_name=topic_name, service_name=service_name, error="timeout")
         return {"error": f"トピック作成エラー ({bootstrap}): コマンドがタイムアウトしました", "success": False}
     except Exception as e:
         log.error("create_kafka_topic_failed", topic_name=topic_name, service_name=service_name, error=str(e))
-        return {"error": f"トピック作成エラー ({bootstrap}): {str(e)}", "success": False}
+        return {"error": f"トピック作成エラー ({bootstrap}): {e!s}", "success": False}
 
     if result.returncode == 0:
         return {
@@ -482,11 +484,12 @@ def _delete_topic_via_cli(bootstrap: str, topic_name: str, timeout_seconds: int)
             capture_output=True,
             text=True,
             timeout=timeout_seconds,
+            check=False,
         )
     except subprocess.TimeoutExpired:
         return {"error": f"トピック削除エラー ({bootstrap}): コマンドがタイムアウトしました", "success": False}
     except Exception as e:
-        return {"error": f"トピック削除エラー ({bootstrap}): {str(e)}", "success": False}
+        return {"error": f"トピック削除エラー ({bootstrap}): {e!s}", "success": False}
 
     if result.returncode == 0:
         return {"deleted": True, "success": True}
