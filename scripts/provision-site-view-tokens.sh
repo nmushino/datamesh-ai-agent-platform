@@ -102,8 +102,8 @@ EOF
     return 1
   fi
 
-  echo "$server" > "/tmp/${site}_k8s_api_server.txt"
-  echo "$token" > "/tmp/${site}_k8s_token.txt"
+  printf '%s' "$server" > "/tmp/${site}_k8s_api_server.txt"
+  printf '%s' "$token" > "/tmp/${site}_k8s_token.txt"
   echo -e "${GREEN}[${site}] 完了 (トークン長: ${#token})${RESET}"
 }
 

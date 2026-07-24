@@ -93,12 +93,16 @@ _MM2_PAUSE_HOLD_SECONDS = 60
 
 def _mm2_api_config(site: str) -> tuple[str, str] | None:
     """<site>_MM2_API_SERVER / <site>_MM2_TOKEN 環境変数から接続情報を返す。
-    未設定の場合は None (MM2一時停止をスキップし、通常のトピック削除のみ行う)。"""
+    未設定の場合は None (MM2一時停止をスキップし、通常のトピック削除のみ行う)。
+    NOTE: Secret作成スクリプト側で `echo` を使うと値の末尾に改行が混入し、
+    httpxが "Invalid non-printable ASCII character in URL" で弾く事故が
+    実際に発生した(2026-07-24)。スクリプト側は修正済みだが、既存の
+    Secretや他の作成経路でも再発しないよう、ここでも防御的に strip する。"""
     api_server = os.environ.get(f"{site.upper()}_MM2_API_SERVER")
     token = os.environ.get(f"{site.upper()}_MM2_TOKEN")
     if not api_server or not token:
         return None
-    return api_server, token
+    return api_server.strip(), token.strip()
 
 
 def _set_mm2_pause(site: str, pause: bool) -> dict:
