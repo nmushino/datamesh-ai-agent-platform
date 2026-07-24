@@ -26,7 +26,7 @@ spec:
       args:
         - "--model=/mnt/models"
         - "--dtype=float16"
-        - "--max-model-len=8192"
+        - "--max-model-len=16384"
         - "--tensor-parallel-size=1"
         # NOTE: $(MODEL_NAME) は未定義の env 変数参照だったため、KServe が
         # コンテナに自動注入する INFERENCE_SERVICE_NAME に置き換える。
