@@ -133,7 +133,18 @@ def _continue_if_truncated(llm, messages: list, ai_message: AIMessage, status_q=
                 "新しい表を始めないこと。"
             ))
         )
-        ai_message = llm.invoke(working_messages)
+        try:
+            ai_message = llm.invoke(working_messages)
+        except Exception as e:
+            # NOTE: このループには元々例外処理が無く、続き生成のこの1呼び出しが
+            # コンテキスト長超過で例外を投げると、呼び出し元 _invoke_subagent の
+            # ループ外(tryで囲まれていない箇所)から例外が漏れて
+            # _invoke_subagent_ensured まで伝播し、それまでに完了していた
+            # create_kafka_topic 等の結果が全て失われて汎用エラー文言に
+            # 差し替わってしまうことを実際に確認した。ここまでに蓄積した
+            # full_content をそのまま返し、続きの生成は諦める。
+            log.warning("continuation_failed", error=str(e))
+            return AIMessage(content=full_content + TRUNCATION_NOTICE)
         # NOTE: モデルは「切れた最後の行」を先頭から書き直す挙動をするため、
         # こちらの蓄積側でもその未完成な最後の行を切り捨ててから継続分を
         # 連結する(そのまま連結すると同じ行が重複してしまう)。

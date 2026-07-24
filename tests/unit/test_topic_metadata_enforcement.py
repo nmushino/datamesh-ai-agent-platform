@@ -32,7 +32,10 @@ class _FakeLLM:
         return self
 
     def invoke(self, messages):
-        return self._responses.pop(0)
+        resp = self._responses.pop(0)
+        if isinstance(resp, Exception):
+            raise resp
+        return resp
 
 
 def _make_tools():
@@ -231,6 +234,70 @@ def test_failed_registration_is_not_treated_as_done_and_reminder_includes_error(
     assert "登録しました" in result[-1].content
     # 2回目は tags 無しで呼ばれ成功していること。
     assert "tags" not in call_log[1]
+
+
+def test_continuation_context_length_error_does_not_lose_prior_tool_results(monkeypatch):
+    """create_kafka_topic 成功直後のLLM呼び出しが max_tokens に達して切れ
+    (finish_reason == "length")、_continue_if_truncated の「続き生成」呼び出し
+    自体がコンテキスト長超過で例外を投げるケースの回帰テスト。以前はこの
+    例外に try/except が無く、_invoke_subagent の外側まで伝播して
+    create_kafka_topic の結果ごと全て失われ、
+    「応答が長くなりすぎたため生成できませんでした」という汎用エラーに
+    差し替わってしまっていた。"""
+    tools = _make_tools()
+    monkeypatch.setitem(graph_module._SUBAGENT_CONFIGS, "schema", (tools, "system prompt"))
+
+    create_call = AIMessage(
+        content="",
+        tool_calls=[{
+            "name": "create_kafka_topic",
+            "args": {"topic_name": "order-test3", "service_name": "external-shop-cluster-kafka-asite:9094"},
+            "id": "1", "type": "tool_call",
+        }],
+    )
+    # トークン予算がごく僅かでツール呼び出しを含まない、切れた応答。
+    truncated_reply = AIMessage(
+        content="トピックを",
+        response_metadata={"finish_reason": "length"},
+    )
+    context_length_error = Exception(
+        "maximum context length is 8192 tokens, however you requested 8272 tokens "
+        "(8201 in the messages, 71 in the completion)"
+    )
+    # リマインダー後、モデルが register_topic_metadata を呼んで成功させる。
+    register_call = AIMessage(
+        content="",
+        tool_calls=[{
+            "name": "register_topic_metadata",
+            "args": {
+                "topic_name": "order-test3",
+                "service_name": "external-shop-cluster-kafka-asite:9094",
+                "description": "test",
+            },
+            "id": "2", "type": "tool_call",
+        }],
+    )
+
+    fake_llm = _FakeLLM([create_call, truncated_reply, context_length_error, register_call])
+    monkeypatch.setattr(graph_module, "get_llm", lambda enable_thinking=False, max_tokens=1024: fake_llm)
+
+    result = graph_module._invoke_subagent(
+        "schema", False, 1024,
+        [
+            HumanMessage(content="Aサイトに order-test3 トピックを追加して"),
+            AIMessage(content="`order-test3` を新規作成します。承認をお願いします。"),
+            HumanMessage(content="承認します。"),
+        ],
+    )
+
+    tool_names_called = [m.name for m in result if isinstance(m, ToolMessage)]
+    # create_kafka_topic の結果が失われず、リマインダー経由で register_topic_metadata
+    # まで到達していること。
+    assert tool_names_called == ["create_kafka_topic", "register_topic_metadata"]
+    assert isinstance(result[-1], AIMessage)
+    assert "order-test3" in result[-1].content
+    assert "登録しました" in result[-1].content
+    assert "応答が長くなりすぎたため生成できませんでした" not in str(result[-1].content)
 
 
 def test_gap_notice_when_loop_exhausts_before_registration_call(monkeypatch):
