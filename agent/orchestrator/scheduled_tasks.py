@@ -10,7 +10,7 @@ import structlog
 
 from tools.common.client import get_openmetadata_client
 from tools.common.settings_store import get_settings_store
-from tools.kafka.admin_tools import _SITE_BOOTSTRAP_SERVERS, list_broker_topics
+from tools.kafka.admin_tools import _SITE_BOOTSTRAP_SERVERS, list_broker_topics, list_managed_kafka_topics
 
 log = structlog.get_logger()
 
@@ -149,6 +149,12 @@ class ScheduledTaskBridge:
             return
 
         now = time.monotonic()
+        # NOTE: 1回のチェックサイクルで複数の未登録トピックが見つかることが
+        # 多く(MM2ミラーコピーがまとめて未登録のまま溜まっていた場合等)、
+        # 以前はトピックごとに履歴パネル/通知を1件ずつ出していたため、
+        # 同じタイミングで大量の通知が並んでしまっていた。1サイクル分の
+        # 結果をここに集約し、最後にまとめて1件だけ出す。
+        discovered: list[dict] = []
         for service_name, bootstrap in _SITE_BOOTSTRAP_SERVERS.items():
             failures = self._broker_failure_counts.get(service_name, 0)
             last_checked = self._broker_last_checked.get(service_name)
@@ -168,11 +174,28 @@ class ScheduledTaskBridge:
                 continue
 
             self._broker_failure_counts[service_name] = 0
+
+            # 通知・自動登録の対象は Managed (Strimzi KafkaTopic CR 管理下) の
+            # トピックのみに絞る。CLI直接作成の非Managedトピックは対象外。
+            managed_result = list_managed_kafka_topics.invoke({"service_name": service_name})
+            if not managed_result.get("success"):
+                log.warning(
+                    "scheduled_task_managed_topics_unavailable",
+                    service_name=service_name, error=managed_result.get("error"),
+                )
+                continue
+            managed_names = {t["topic_name"] for t in managed_result.get("topics", [])}
+
             for topic_name in sorted(broker_topic_names):
+                if topic_name not in managed_names:
+                    continue
                 fqn = f"{service_name}.{topic_name}"
                 if fqn in om_fqns:
                     continue
-                self._register_discovered_topic(service_name, topic_name, fqn)
+                discovered.append(self._register_discovered_topic(service_name, topic_name, fqn))
+
+        if discovered:
+            self._emit_discovered_topics_summary(discovered)
 
     def _notify_broker_connection_error(self, service_name: str, error: Exception) -> None:
         """実ブローカーへの接続エラーは頻発しがち(Skupperリンク切断時など)で、
@@ -192,7 +215,9 @@ class ScheduledTaskBridge:
         except Exception as e:
             log.error("scheduled_task_notify_error_failed", error=str(e))
 
-    def _register_discovered_topic(self, service_name: str, topic_name: str, fqn: str) -> None:
+    def _register_discovered_topic(self, service_name: str, topic_name: str, fqn: str) -> dict:
+        """検知した1トピックの登録結果を返す(履歴パネルへの emit はここでは行わず、
+        _check_broker_topics 側で1サイクル分まとめて1件の通知にする)。"""
         from tools.openmetadata.schema_tools import register_topic_metadata
 
         description, source_note = self._enrich_topic_description(topic_name)
@@ -204,20 +229,35 @@ class ScheduledTaskBridge:
                 "description": description,
             })
         except Exception as e:
-            self._emit(self._make_topic_record(
-                fqn, "error", f"自動登録に失敗しました: {e}", task_name="kafka_broker_topic_scan",
-            ))
-            return
+            return {"fqn": fqn, "success": False, "message": f"自動登録に失敗しました: {e}"}
 
         if result.get("success"):
-            message = f"実ブローカーで新規トピックを検知し、OpenMetadataへ自動登録しました: {fqn}"
-            if source_note:
-                message += f" ({source_note})"
-            self._emit(self._make_topic_record(fqn, "changed", message, task_name="kafka_broker_topic_scan"))
-        else:
-            self._emit(self._make_topic_record(
-                fqn, "error", f"自動登録に失敗しました: {result.get('error')}", task_name="kafka_broker_topic_scan",
-            ))
+            message = fqn if not source_note else f"{fqn} ({source_note})"
+            return {"fqn": fqn, "success": True, "message": message}
+        return {"fqn": fqn, "success": False, "message": f"自動登録に失敗しました: {result.get('error')}"}
+
+    def _emit_discovered_topics_summary(self, discovered: list[dict]) -> None:
+        """1チェックサイクル分の新規トピック検知結果をまとめて1件の
+        履歴パネル項目(必要なら通知ベルにも)として出す。"""
+        succeeded = [d for d in discovered if d["success"]]
+        failed = [d for d in discovered if not d["success"]]
+
+        lines = []
+        if succeeded:
+            lines.append(
+                f"実ブローカーで新規トピックを{len(succeeded)}件検知し、OpenMetadataへ自動登録しました: "
+                + ", ".join(d["message"] for d in succeeded)
+            )
+        if failed:
+            lines.append(
+                f"{len(failed)}件は自動登録に失敗しました: "
+                + "; ".join(f"{d['fqn']} ({d['message']})" for d in failed)
+            )
+
+        status = "changed" if succeeded else "error"
+        self._emit(self._make_topic_record(
+            f"({len(discovered)}件)", status, "\n".join(lines), task_name="kafka_broker_topic_scan",
+        ))
 
     def _enrich_topic_description(self, topic_name: str) -> tuple[str, str]:
         """GitHub organization 内のソースコードから、トピック名に対応する
