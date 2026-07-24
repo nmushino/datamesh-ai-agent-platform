@@ -269,6 +269,25 @@ def _topic_already_created_on_broker(topic_name: str, service_name: str, prior_m
     return False
 
 
+def _reminder_topic_metadata_pending(topic_name: str, service_name: str) -> HumanMessage:
+    return HumanMessage(content=(
+        f"まだ register_topic_metadata を呼び出していません。`{topic_name}` "
+        f"({service_name}) は実ブローカー上には作成済みですが、OpenMetadata に "
+        f"登録されるまでこの依頼は完了していません。続けて register_topic_metadata "
+        f"を呼び出してOpenMetadataにも登録してから、完了を報告してください。"
+    ))
+
+
+def _registration_gap_notice(pending: set) -> str:
+    topics = "、".join(f"`{name}`({service})" for name, service in pending)
+    return (
+        f"⚠️ {topics} を実ブローカー上には作成しましたが、OpenMetadataへの"
+        f"メタデータ登録 (register_topic_metadata) が完了しませんでした。"
+        f"お手数ですが、あらためて「{topics} をOpenMetadataに登録して」の"
+        f"ように依頼するか、管理者に報告してください。"
+    )
+
+
 def _inject_missing_topic_creation(tool_calls: list, prior_messages: list) -> list:
     """register_topic_metadata が呼ばれたが、対応する create_kafka_topic が
     まだ成功していない場合、モデルが手順を省略しても実ブローカーへの作成を
@@ -354,6 +373,15 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
     latest_human_text = next(
         (str(m.content) for m in reversed(input_messages) if isinstance(m, HumanMessage)), ""
     )
+    # NOTE: create_kafka_topic が成功した後、続けて register_topic_metadata を
+    # 呼ぶようプロンプトで明示的に指示していても、モデルがブローカー作成の
+    # 成功を見た時点で完了と判断し、後続のOpenMetadata登録を一切呼ばずに
+    # ターンを終えてしまうことを実際に確認した(トピックはブローカー上には
+    # 作られるが OpenMetadata には一切登録されない)。register_topic_metadata
+    # 専用ではなく create_kafka_topic の成功そのものを起点に追跡することで、
+    # 通常のチャットフロー・RHDH経由フローの両方に効く。
+    topics_awaiting_metadata_registration: set[tuple[str, str]] = set()
+    metadata_reminder_sent = False
     for _ in range(_MAX_TOOL_ITERATIONS):
         try:
             ai_message = llm_with_tools.invoke(messages)
@@ -387,6 +415,24 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
         messages.append(ai_message)
         new_messages.append(ai_message)
         if not tool_calls:
+            if topics_awaiting_metadata_registration and not metadata_reminder_sent:
+                metadata_reminder_sent = True
+                topic_name, service_name = next(iter(topics_awaiting_metadata_registration))
+                reminder = _reminder_topic_metadata_pending(topic_name, service_name)
+                messages.append(reminder)
+                new_messages.append(reminder)
+                continue
+            if topics_awaiting_metadata_registration:
+                # リマインダーを送っても register_topic_metadata を呼ばなかった場合、
+                # ユーザーに「完了しました」と誤って報告しないよう、モデルの自己申告を
+                # 明示的な警告メッセージに差し替える。
+                log.error(
+                    "schema_agent_metadata_registration_skipped",
+                    pending=list(topics_awaiting_metadata_registration),
+                )
+                new_messages.append(AIMessage(
+                    content=_registration_gap_notice(topics_awaiting_metadata_registration)
+                ))
             break
 
         tool_calls = _inject_missing_topic_creation(tool_calls, messages[:-1])
@@ -422,8 +468,16 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
                         )
                     tool_args = _normalize_site_query(tc["name"], tc["args"], latest_human_text)
                     result = tool_fn.invoke(tool_args)
-                    if tc["name"] == "create_kafka_topic" and not result.get("success"):
-                        broker_creation_failed = True
+                    if tc["name"] == "create_kafka_topic":
+                        if result.get("success"):
+                            topics_awaiting_metadata_registration.add(
+                                (result.get("topic_name", ""), result.get("service_name", ""))
+                            )
+                        else:
+                            broker_creation_failed = True
+                    if tc["name"] == "register_topic_metadata":
+                        key = (tc["args"].get("topic_name", ""), tc["args"].get("service_name", ""))
+                        topics_awaiting_metadata_registration.discard(key)
                 else:
                     result = {"error": f"unknown tool: {tc['name']}", "success": False}
             tool_message = ToolMessage(

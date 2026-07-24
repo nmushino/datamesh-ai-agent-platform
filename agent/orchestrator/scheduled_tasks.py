@@ -132,11 +132,28 @@ class ScheduledTaskBridge:
 
     def _run_loop(self) -> None:
         while not self._stop_event.is_set():
+            self._refresh_enabled_from_store()
             if self._enabled:
                 self._check_all_tables()
                 self._check_new_topics()
                 self._check_broker_topics()
             self._stop_event.wait(self._interval_seconds)
+
+    def _refresh_enabled_from_store(self) -> None:
+        """設定ストアの enabled 値をループの各サイクルで読み直す。
+        複数レプリカ構成では、設定画面のトグルはリクエストを受けた1台
+        のみの self._enabled を即時反映するため、それ以外のレプリカは
+        DBへの保存だけを頼りにここで反映する必要がある。"""
+        store = get_settings_store()
+        if not store:
+            return
+        try:
+            stored_enabled = store.get("scheduled_task_enabled")
+        except Exception as e:
+            log.error("scheduled_task_settings_refresh_failed", error=str(e))
+            return
+        if stored_enabled is not None:
+            self._enabled = stored_enabled != "false"
 
     def _check_broker_topics(self) -> None:
         """各サイトの実 Kafka ブローカーのトピック一覧を取得し、
