@@ -326,6 +326,72 @@ def list_broker_topics(bootstrap: str) -> set[str]:
 
 
 @tool
+def list_managed_kafka_topics(service_name: str) -> dict:
+    """
+    対象サイトで KafkaTopic カスタムリソース (Strimzi Topic Operator管理、
+    create_kafka_topic の managed=True で作成したもの) として管理されている
+    トピックの一覧を返します。
+
+    OpenMetadata 側の検索結果(説明文・スキーマ等を含む)は件数が多いと
+    すぐにモデルのコンテキスト長を超えてしまうため、「Managedなトピックだけ
+    教えて」のように対象を絞った依頼では、まずこのツールで軽量な一覧
+    (トピック名・パーティション数・レプリカ数のみ)を取得すること。
+    個々のトピックの説明文が必要な場合は、この結果を踏まえて
+    search_data_assets 等でトピックを個別に絞り込んで問い合わせること。
+
+    Args:
+        service_name: 対象サイトの Messaging Service 名。
+            Aサイト: "external-shop-cluster-kafka-asite:9094"
+            Bサイト: "external-shop-cluster-kafka-bsite:9094"
+            Cサイト: "external-shop-cluster-kafka-csite:9094"
+    """
+    site = _SITE_SHORT_NAMES.get(service_name)
+    if not site:
+        return {
+            "error": f"未知の service_name: {service_name}。"
+                     f"利用可能な値: {list(_SITE_SHORT_NAMES.keys())}",
+            "success": False,
+        }
+
+    config = _mm2_api_config(site)
+    if config is None:
+        return {"error": "K8s API 認証情報が未設定のため、Managedトピック一覧を取得できません", "success": False}
+
+    api_server, token = config
+    url = (
+        f"{api_server}/apis/kafka.strimzi.io/v1/namespaces/{_MM2_NAMESPACE}"
+        f"/kafkatopics?labelSelector=strimzi.io%2Fcluster%3D{_STRIMZI_KAFKA_CLUSTER_NAME}"
+    )
+    try:
+        resp = httpx.get(
+            url,
+            headers={"Authorization": f"Bearer {token}"},
+            verify=False,
+            timeout=_MM2_API_TIMEOUT_SECONDS,
+        )
+        resp.raise_for_status()
+        items = resp.json().get("items", [])
+    except Exception as e:
+        log.error("list_managed_kafka_topics_failed", service_name=service_name, error=str(e))
+        return {"error": f"Managedトピック一覧取得エラー: {e!s}", "success": False}
+
+    topics = [
+        {
+            "topic_name": item.get("metadata", {}).get("name", ""),
+            "partitions": item.get("spec", {}).get("partitions"),
+            "replicas": item.get("spec", {}).get("replicas"),
+        }
+        for item in items
+    ]
+    return {
+        "service_name": service_name,
+        "topics": topics,
+        "count": len(topics),
+        "success": True,
+    }
+
+
+@tool
 def topic_exists(topic_name: str, service_name: str) -> dict:
     """
     対象サイトの実際の Kafka ブローカー上に、指定したトピックが既に

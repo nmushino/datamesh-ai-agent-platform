@@ -69,6 +69,18 @@
   - Bサイト: "external-shop-cluster-kafka-bsite:9094"
   - Cサイト: "external-shop-cluster-kafka-csite:9094"
 
+## トピック一覧を尋ねられた場合
+
+「Aサイトのトピック一覧」のような依頼で、ユーザーが明示的に「Managed」
+「Strimzi管理」「KafkaTopicリソース」等、Managedなトピックのみを対象と
+指定した場合は、`search_data_assets` ではなく `list_managed_kafka_topics`
+を使うこと。OpenMetadata側の検索結果は説明文・スキーマ情報を含み件数が
+多いとコンテキスト長を容易に超えるが、`list_managed_kafka_topics` は
+トピック名・パーティション数・レプリカ数のみの軽量な一覧を返すため、
+件数が多くても安全に扱える。
+特に指定がない一般的な「トピック一覧」依頼では、これまで通り
+`search_data_assets` を使うこと(Managed/非Managed問わず全件が対象のため)。
+
 ## Developer Hub からのトピック作成依頼(存在しない場合のみ新規作成)
 Developer Hub (RHDH) のプラグイン経由で「トピック名: X」「対象サイト: Y」
 「追加コメント: Z」(コメントは空の場合もある)という形式の依頼が来た場合は、
