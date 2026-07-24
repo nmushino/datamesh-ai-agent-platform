@@ -6,7 +6,9 @@ create_kafka_topic が成功した後、モデルが register_topic_metadata を
 _invoke_subagent は、create_kafka_topic 成功後にツール呼び出し無しの応答が
 返ってきた場合、まずリマインダーを注入してモデルにもう一度register_topic_metadata
 を呼ばせようとし、それでも呼ばなければ「完了しました」と誤って報告せず、
-明示的な警告メッセージに差し替える。
+明示的な警告メッセージに差し替える。また register_topic_metadata が成功した
+時点で、追加の要約LLM呼び出しを挟まず確定的な完了メッセージを返して打ち切る
+(要約生成でコンテキスト長超過が起きるのを避けるため)。
 """
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
@@ -84,9 +86,7 @@ def test_reminder_is_injected_and_model_then_registers_metadata(monkeypatch):
             "id": "2", "type": "tool_call",
         }],
     )
-    final_reply = AIMessage(content="トピックを作成し、OpenMetadataにも登録しました。")
-
-    fake_llm = _FakeLLM([create_call, premature_stop, register_call, final_reply])
+    fake_llm = _FakeLLM([create_call, premature_stop, register_call])
     monkeypatch.setattr(graph_module, "get_llm", lambda enable_thinking=False, max_tokens=1024: fake_llm)
 
     result = graph_module._invoke_subagent(
@@ -100,7 +100,12 @@ def test_reminder_is_injected_and_model_then_registers_metadata(monkeypatch):
 
     tool_names_called = [m.name for m in result if isinstance(m, ToolMessage)]
     assert tool_names_called == ["create_kafka_topic", "register_topic_metadata"]
-    assert result[-1].content == final_reply.content
+    # 登録成功後は要約のためのLLM追加呼び出しを挟まず、確定的な完了メッセージを返す
+    # (以前はここでLLMに「まとめ」を生成させており、コンテキスト長超過で生JSON
+    # ダンプになってしまうことがあった)。
+    assert isinstance(result[-1], AIMessage)
+    assert "order-test3" in result[-1].content
+    assert "登録しました" in result[-1].content
 
 
 def test_gap_notice_replaces_false_success_when_model_never_registers(monkeypatch):
@@ -201,9 +206,7 @@ def test_failed_registration_is_not_treated_as_done_and_reminder_includes_error(
             "id": "3", "type": "tool_call",
         }],
     )
-    final_reply = AIMessage(content="トピックを作成し、OpenMetadataにも登録しました。")
-
-    fake_llm = _FakeLLM([create_call, bad_register_call, false_claim, good_register_call, final_reply])
+    fake_llm = _FakeLLM([create_call, bad_register_call, false_claim, good_register_call])
     monkeypatch.setattr(graph_module, "get_llm", lambda enable_thinking=False, max_tokens=1024: fake_llm)
 
     result = graph_module._invoke_subagent(
@@ -222,7 +225,10 @@ def test_failed_registration_is_not_treated_as_done_and_reminder_includes_error(
 
     tool_names_called = [m.name for m in result if isinstance(m, ToolMessage)]
     assert tool_names_called == ["create_kafka_topic", "register_topic_metadata", "register_topic_metadata"]
-    assert result[-1].content == final_reply.content
+    # 成功後は確定的な完了メッセージで打ち切られ、追加の要約LLM呼び出しは無い。
+    assert isinstance(result[-1], AIMessage)
+    assert "order-test3" in result[-1].content
+    assert "登録しました" in result[-1].content
     # 2回目は tags 無しで呼ばれ成功していること。
     assert "tags" not in call_log[1]
 

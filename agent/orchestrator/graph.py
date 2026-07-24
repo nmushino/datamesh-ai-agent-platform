@@ -463,6 +463,7 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
             break
 
         broker_creation_failed = False
+        just_registered: list[tuple[str, str]] = []
         for tc in tool_calls:
             if tc["name"] == "register_topic_metadata" and broker_creation_failed:
                 # 直前の create_kafka_topic が失敗した場合、実体のないトピックを
@@ -495,6 +496,7 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
                         # ことがあったため、成功した場合のみ「登録待ち」を解除する。
                         if result.get("success"):
                             topics_awaiting_metadata_registration.discard(key)
+                            just_registered.append(key)
                         else:
                             last_registration_error = result.get("error", "")
                 else:
@@ -506,6 +508,20 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
             )
             messages.append(tool_message)
             new_messages.append(tool_message)
+
+        if just_registered:
+            # NOTE: create_kafka_topic + register_topic_metadata が成功した
+            # 直後にさらにLLMを呼んで自然文の「まとめ」を生成させると、それまでの
+            # GitHub調査結果等でコンテキストが既に肥大化しており、要約生成自体が
+            # コンテキスト長超過で失敗し生JSONダンプになってしまうことを確認した。
+            # トピック作成+OpenMetadata登録が完了した時点で結果は自明なため、
+            # 追加のLLM呼び出し(要約)を挟まず、ここで確定的な完了メッセージを
+            # 返して打ち切る。
+            topic_name, service_name = just_registered[-1]
+            new_messages.append(AIMessage(content=(
+                f"`{topic_name}` ({service_name}) を作成し、OpenMetadataにも登録しました。"
+            )))
+            return new_messages
     else:
         # NOTE: for...else の else は break を経由せずループが規定回数
         # (_MAX_TOOL_ITERATIONS) を使い切った場合にのみ実行される。実際に
