@@ -10,7 +10,11 @@ import structlog
 
 from tools.common.client import get_openmetadata_client
 from tools.common.settings_store import get_settings_store
-from tools.kafka.admin_tools import _SITE_BOOTSTRAP_SERVERS, list_broker_topics, list_managed_kafka_topics
+from tools.kafka.admin_tools import (
+    _SITE_BOOTSTRAP_SERVERS,
+    list_broker_topics,
+    list_managed_kafka_topics,
+)
 
 log = structlog.get_logger()
 
