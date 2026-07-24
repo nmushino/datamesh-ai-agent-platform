@@ -29,6 +29,7 @@ const MAX_TOKENS_OPTIONS: { level: MaxTokensLevel; label: string }[] = [
 // バックエンドが未応答でも入力欄には触れるようにしておくための初期値
 // (接続が回復し次第PUTが送られ、実際の値に反映される)。
 const FALLBACK_TASK_SETTINGS: ScheduledTaskSettings = {
+  enabled: true,
   interval_seconds: 600,
   backoff_failure_threshold: 5,
   backoff_interval_seconds: 3600,
@@ -134,6 +135,21 @@ export function SettingsModal({ open, onClose, appSettings, onChangeAppSettings 
   // バックエンドの接続状況に関わらず、値の入力・変更自体は常に受け付ける
   // (保存ボタンを押した時点でPUTを送る。接続が復旧していればそこで
   // 実際に反映される)。
+  // ON/OFFはトグルボタン即時反映(数値項目のようなドラフト→保存ボタンは挟まない)。
+  const toggleTaskEnabled = () => {
+    const nextEnabled = !taskSettings.enabled;
+    setTaskSettings((prev) => ({ ...prev, enabled: nextEnabled }));
+    setTaskSaving(true);
+    updateScheduledTaskSettings({ enabled: nextEnabled })
+      .then((res) => {
+        setTaskSettings(res);
+        setTaskDraft(res);
+        setTaskLoadError(false);
+      })
+      .catch(() => setTaskLoadError(true))
+      .finally(() => setTaskSaving(false));
+  };
+
   const saveTaskField = (field: keyof ScheduledTaskSettings) => {
     const patch = { [field]: taskDraft[field] } as Partial<ScheduledTaskSettings>;
     setTaskSettings((prev) => ({ ...prev, ...patch }));
@@ -212,11 +228,25 @@ export function SettingsModal({ open, onClose, appSettings, onChangeAppSettings 
                 (値を入力し保存しておけば、接続復旧時に反映されます)
               </p>
             )}
+            <label className="settings-field">
+              <span>定期実行</span>
+              <button
+                type="button"
+                className={`chat-settings-toggle ${
+                  taskSettings.enabled ? "chat-settings-toggle-on" : ""
+                }`}
+                onClick={toggleTaskEnabled}
+                disabled={taskSaving}
+                aria-pressed={taskSettings.enabled}
+              >
+                定期実行: {taskSettings.enabled ? "ON" : "OFF"}
+              </button>
+            </label>
             <SettingField
               label="実行頻度(秒)"
               value={taskDraft.interval_seconds}
               min={60}
-              disabled={taskSaving}
+              disabled={taskSaving || !taskSettings.enabled}
               onChange={(v) => setTaskDraft((prev) => ({ ...prev, interval_seconds: v }))}
               onSave={() => saveTaskField("interval_seconds")}
               saved={taskSavedField === "interval_seconds"}
@@ -225,7 +255,7 @@ export function SettingsModal({ open, onClose, appSettings, onChangeAppSettings 
               label="連続エラー何回でチェック頻度を延ばすか"
               value={taskDraft.backoff_failure_threshold}
               min={1}
-              disabled={taskSaving}
+              disabled={taskSaving || !taskSettings.enabled}
               onChange={(v) => setTaskDraft((prev) => ({ ...prev, backoff_failure_threshold: v }))}
               onSave={() => saveTaskField("backoff_failure_threshold")}
               saved={taskSavedField === "backoff_failure_threshold"}
@@ -234,7 +264,7 @@ export function SettingsModal({ open, onClose, appSettings, onChangeAppSettings 
               label="延長後のチェック頻度(秒)"
               value={taskDraft.backoff_interval_seconds}
               min={60}
-              disabled={taskSaving}
+              disabled={taskSaving || !taskSettings.enabled}
               onChange={(v) => setTaskDraft((prev) => ({ ...prev, backoff_interval_seconds: v }))}
               onSave={() => saveTaskField("backoff_interval_seconds")}
               saved={taskSavedField === "backoff_interval_seconds"}

@@ -368,6 +368,7 @@ def scheduled_tasks_recent():
 
 
 class ScheduledTaskSettings(BaseModel):
+    enabled: bool | None = None
     interval_seconds: int | None = None
     backoff_failure_threshold: int | None = None
     backoff_interval_seconds: int | None = None
@@ -381,6 +382,7 @@ def get_scheduled_task_settings():
 @app.put("/api/v1/settings/scheduled-task")
 def update_scheduled_task_settings(req: ScheduledTaskSettings):
     return get_scheduled_task_bridge().update_settings(
+        enabled=req.enabled,
         interval_seconds=req.interval_seconds,
         backoff_failure_threshold=req.backoff_failure_threshold,
         backoff_interval_seconds=req.backoff_interval_seconds,

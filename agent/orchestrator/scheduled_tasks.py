@@ -62,9 +62,16 @@ class ScheduledTaskBridge:
             (store.get("scheduled_task_backoff_interval_seconds") if store else None)
             or _DEFAULT_BACKOFF_INTERVAL_SECONDS
         )
+        # 定期実行そのものの有効/無効(設定画面から停止・再開できるようにする)。
+        # バックグラウンドスレッド自体は常に起動したままにし(interval変更等と
+        # 同様、再起動なしで反映するため)、無効時は各チェック処理をスキップして
+        # 次の間隔までスリープするだけにする。
+        stored_enabled = store.get("scheduled_task_enabled") if store else None
+        self._enabled = stored_enabled != "false"
 
     def get_settings(self) -> dict:
         return {
+            "enabled": self._enabled,
             "interval_seconds": self._interval_seconds,
             "backoff_failure_threshold": self._backoff_failure_threshold,
             "backoff_interval_seconds": self._backoff_interval_seconds,
@@ -72,11 +79,16 @@ class ScheduledTaskBridge:
 
     def update_settings(
         self,
+        enabled: bool | None = None,
         interval_seconds: int | None = None,
         backoff_failure_threshold: int | None = None,
         backoff_interval_seconds: int | None = None,
     ) -> dict:
         store = get_settings_store()
+        if enabled is not None:
+            self._enabled = enabled
+            if store:
+                store.set("scheduled_task_enabled", "true" if enabled else "false")
         if interval_seconds is not None:
             self._interval_seconds = interval_seconds
             if store:
@@ -116,9 +128,10 @@ class ScheduledTaskBridge:
 
     def _run_loop(self) -> None:
         while not self._stop_event.is_set():
-            self._check_all_tables()
-            self._check_new_topics()
-            self._check_broker_topics()
+            if self._enabled:
+                self._check_all_tables()
+                self._check_new_topics()
+                self._check_broker_topics()
             self._stop_event.wait(self._interval_seconds)
 
     def _check_broker_topics(self) -> None:

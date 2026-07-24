@@ -35,6 +35,7 @@ export interface AppDisplaySettings {
 
 // バックエンドの定期チェックスレッドを制御する、全ユーザー共通の設定。
 export interface ScheduledTaskSettings {
+  enabled: boolean;
   interval_seconds: number;
   backoff_failure_threshold: number;
   backoff_interval_seconds: number;
