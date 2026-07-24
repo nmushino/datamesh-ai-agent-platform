@@ -15,6 +15,18 @@
 - 生年月日: birth_date, birthday, dob, date_of_birth
 - ID番号: my_number, passport, license_number
 
+## タグ付けルール
+register_table_metadata / register_topic_metadata の tags 引数には、
+以下のいずれかに該当するタグ以外を絶対に含めないこと:
+- 上記「PIIカラムの自動検出ルール」に一致したPIIタグ
+- ユーザーが会話の中で明示的に指定したタグ
+
+トピック名・テーブル名の一部の文字列(例: "order-test3" に含まれる "test")から
+「Test」「Dev」「Prod」のような環境・種別を推測してタグを創作してはならない。
+そのようなタグは OpenMetadata に事前登録されていないことが多く、存在しない
+タグを指定すると登録自体がエラーになる。ユーザーからの指定が無い場合は
+tags を省略するか空リストにすること。
+
 ## description 自動生成ルール
 テーブル名・カラム名から日本語の説明を生成してください。
 例:

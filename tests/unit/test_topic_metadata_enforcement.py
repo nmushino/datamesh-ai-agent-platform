@@ -139,6 +139,94 @@ def test_gap_notice_replaces_false_success_when_model_never_registers(monkeypatc
     assert result[-1].content != "トピックを追加しました。"
 
 
+def test_failed_registration_is_not_treated_as_done_and_reminder_includes_error(monkeypatch):
+    """register_topic_metadata がモデルの創作した存在しないタグ("Test"等)を
+    含めて呼ばれ、OpenMetadata側でエラーになるケースの回帰テスト。以前は
+    「呼び出しさえされれば登録済み」と誤判定し、後続でモデルが「登録し直し
+    ました」と自己申告しても実際には再登録していないケースを検知できなかった。
+    失敗時はリマインダーにエラー内容を含め、モデルが不要なタグを外して
+    再試行できるようにする。"""
+    tools = _make_tools()
+
+    call_log = []
+
+    def register_side_effect(args):
+        call_log.append(args)
+        if args.get("tags"):
+            return {"error": "tag instance for Test not found", "success": False}
+        return {"fqn": "external-shop-cluster-kafka-asite:9094.order-test3", "created": True, "success": True}
+
+    tools = [t for t in tools if t.name != "register_topic_metadata"]
+    tools.append(_FakeTool("register_topic_metadata", register_side_effect))
+    monkeypatch.setitem(graph_module._SUBAGENT_CONFIGS, "schema", (tools, "system prompt"))
+
+    create_call = AIMessage(
+        content="",
+        tool_calls=[{
+            "name": "create_kafka_topic",
+            "args": {"topic_name": "order-test3", "service_name": "external-shop-cluster-kafka-asite:9094"},
+            "id": "1", "type": "tool_call",
+        }],
+    )
+    # モデルが勝手に "Test" タグを創作して登録を試み、失敗する。
+    bad_register_call = AIMessage(
+        content="",
+        tool_calls=[{
+            "name": "register_topic_metadata",
+            "args": {
+                "topic_name": "order-test3",
+                "service_name": "external-shop-cluster-kafka-asite:9094",
+                "description": "test",
+                "tags": ["Test"],
+            },
+            "id": "2", "type": "tool_call",
+        }],
+    )
+    # エラーを見た直後、モデルはツールを呼ばずに「タグを登録し直しました」と
+    # 自己申告するだけで終わろうとする(実際に確認した挙動そのもの)。
+    false_claim = AIMessage(content=(
+        "登録中にエラーが発生しました。原因は「Test」タグが存在していないことです。"
+        "このタグを登録しました。修正後、再度トピックのメタデータを登録してください。"
+    ))
+    # リマインダー(エラー内容つき)を受け取り、タグ無しで再試行して成功する。
+    good_register_call = AIMessage(
+        content="",
+        tool_calls=[{
+            "name": "register_topic_metadata",
+            "args": {
+                "topic_name": "order-test3",
+                "service_name": "external-shop-cluster-kafka-asite:9094",
+                "description": "test",
+            },
+            "id": "3", "type": "tool_call",
+        }],
+    )
+    final_reply = AIMessage(content="トピックを作成し、OpenMetadataにも登録しました。")
+
+    fake_llm = _FakeLLM([create_call, bad_register_call, false_claim, good_register_call, final_reply])
+    monkeypatch.setattr(graph_module, "get_llm", lambda enable_thinking=False, max_tokens=1024: fake_llm)
+
+    result = graph_module._invoke_subagent(
+        "schema", False, 1024,
+        [
+            HumanMessage(content="Aサイトに order-test3 トピックを追加して"),
+            AIMessage(content="`order-test3` を新規作成します。承認をお願いします。"),
+            HumanMessage(content="承認します。"),
+        ],
+    )
+
+    # リマインダー(HumanMessage)にエラー内容が含まれていること。
+    reminders = [m for m in result if isinstance(m, HumanMessage) and "register_topic_metadata" in str(m.content)]
+    assert reminders
+    assert "tag instance for Test not found" in reminders[0].content
+
+    tool_names_called = [m.name for m in result if isinstance(m, ToolMessage)]
+    assert tool_names_called == ["create_kafka_topic", "register_topic_metadata", "register_topic_metadata"]
+    assert result[-1].content == final_reply.content
+    # 2回目は tags 無しで呼ばれ成功していること。
+    assert "tags" not in call_log[1]
+
+
 def test_gap_notice_when_loop_exhausts_before_registration_call(monkeypatch):
     """topic_exists + GitHub調査(タイムアウト含む)+ create_kafka_topic だけで
     _MAX_TOOL_ITERATIONS を使い切り、register_topic_metadata を呼ぶ前にループが

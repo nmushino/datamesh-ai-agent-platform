@@ -269,12 +269,20 @@ def _topic_already_created_on_broker(topic_name: str, service_name: str, prior_m
     return False
 
 
-def _reminder_topic_metadata_pending(topic_name: str, service_name: str) -> HumanMessage:
+def _reminder_topic_metadata_pending(topic_name: str, service_name: str, last_error: str = "") -> HumanMessage:
+    error_note = (
+        f"直前の register_topic_metadata 呼び出しは次のエラーで失敗しています: "
+        f"「{last_error}」。存在しないタグ名を tags 引数に指定していないか確認し、"
+        f"ユーザーから明示的に指定されたタグ、または既定のPII検出ルールに該当する"
+        f"タグ以外は付与せず(tags は省略するか空にしてよい)、"
+        if last_error else ""
+    )
     return HumanMessage(content=(
-        f"まだ register_topic_metadata を呼び出していません。`{topic_name}` "
+        f"まだ register_topic_metadata が成功していません。`{topic_name}` "
         f"({service_name}) は実ブローカー上には作成済みですが、OpenMetadata に "
-        f"登録されるまでこの依頼は完了していません。続けて register_topic_metadata "
-        f"を呼び出してOpenMetadataにも登録してから、完了を報告してください。"
+        f"登録されるまでこの依頼は完了していません。{error_note}"
+        f"続けて register_topic_metadata を呼び出してOpenMetadataにも登録してから、"
+        f"完了を報告してください。"
     ))
 
 
@@ -382,6 +390,7 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
     # 通常のチャットフロー・RHDH経由フローの両方に効く。
     topics_awaiting_metadata_registration: set[tuple[str, str]] = set()
     metadata_reminder_sent = False
+    last_registration_error = ""
     for _ in range(_MAX_TOOL_ITERATIONS):
         try:
             ai_message = llm_with_tools.invoke(messages)
@@ -418,7 +427,7 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
             if topics_awaiting_metadata_registration and not metadata_reminder_sent:
                 metadata_reminder_sent = True
                 topic_name, service_name = next(iter(topics_awaiting_metadata_registration))
-                reminder = _reminder_topic_metadata_pending(topic_name, service_name)
+                reminder = _reminder_topic_metadata_pending(topic_name, service_name, last_registration_error)
                 messages.append(reminder)
                 new_messages.append(reminder)
                 continue
@@ -477,7 +486,17 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
                             broker_creation_failed = True
                     if tc["name"] == "register_topic_metadata":
                         key = (tc["args"].get("topic_name", ""), tc["args"].get("service_name", ""))
-                        topics_awaiting_metadata_registration.discard(key)
+                        # NOTE: 呼び出しさえされれば「登録済み」とみなしていたが、
+                        # 実際には register_topic_metadata が失敗する場合がある
+                        # (例: LLMが勝手に発明した存在しないタグ名を tags に含めて
+                        # 呼び出し、OpenMetadata側で"tag instance for X not found"と
+                        # 拒否されるケースを確認した)。この場合モデルが「登録し
+                        # 直しました」と自己申告するだけで実際には再登録していない
+                        # ことがあったため、成功した場合のみ「登録待ち」を解除する。
+                        if result.get("success"):
+                            topics_awaiting_metadata_registration.discard(key)
+                        else:
+                            last_registration_error = result.get("error", "")
                 else:
                     result = {"error": f"unknown tool: {tc['name']}", "success": False}
             tool_message = ToolMessage(
