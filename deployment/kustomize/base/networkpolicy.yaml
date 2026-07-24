@@ -110,10 +110,25 @@ spec:
             cidr: 18.224.111.6/32  # external-shop-cluster-kafka-asite advertised ELB (再割り当て後、sandbox780)
         - ipBlock:
             cidr: 3.131.50.88/32  # external-shop-cluster-kafka-asite advertised ELB (再割り当て後、sandbox780)
+        # bsite の広告アドレスがブローカーごとの個別ELBに変わった (2026-07-25 確認、
+        # 旧ELBがDNSごと削除されており "Name or service not known" で失敗する原因
+        # だった)。bootstrap + broker0/1/2 それぞれの新ELB(2AZ)を許可する。
         - ipBlock:
-            cidr: 3.136.53.135/32   # external-shop-cluster-kafka-bsite advertised ELB (AZ1)
+            cidr: 18.188.68.161/32  # external-shop-cluster-kafka-bsite advertised ELB (bootstrap AZ1、sandbox2372)
         - ipBlock:
-            cidr: 18.117.213.10/32  # external-shop-cluster-kafka-bsite advertised ELB (AZ2)
+            cidr: 3.138.180.52/32   # external-shop-cluster-kafka-bsite advertised ELB (bootstrap AZ2、sandbox2372)
+        - ipBlock:
+            cidr: 18.218.123.10/32  # external-shop-cluster-kafka-bsite advertised ELB (broker0 AZ1、sandbox2372)
+        - ipBlock:
+            cidr: 3.12.4.65/32      # external-shop-cluster-kafka-bsite advertised ELB (broker0 AZ2、sandbox2372)
+        - ipBlock:
+            cidr: 18.190.114.248/32  # external-shop-cluster-kafka-bsite advertised ELB (broker1 AZ1、sandbox2372)
+        - ipBlock:
+            cidr: 18.117.2.24/32    # external-shop-cluster-kafka-bsite advertised ELB (broker1 AZ2、sandbox2372)
+        - ipBlock:
+            cidr: 18.221.149.117/32  # external-shop-cluster-kafka-bsite advertised ELB (broker2 AZ1、sandbox2372)
+        - ipBlock:
+            cidr: 3.134.255.174/32  # external-shop-cluster-kafka-bsite advertised ELB (broker2 AZ2、sandbox2372)
         - ipBlock:
             cidr: 13.59.243.104/32  # external-shop-cluster-kafka-csite advertised ELB (bootstrap AZ1、sandbox850)
         - ipBlock:
