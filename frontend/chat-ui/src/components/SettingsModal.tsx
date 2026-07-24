@@ -45,39 +45,30 @@ const FALLBACK_MAX_TOKENS_SETTINGS: MaxTokensSettings = {
 type Tab = "common" | "token";
 
 // 入力してすぐ保存されると意図せず値が変わってしまうため、各項目は
-// 手元(ドラフト)で編集してから「保存」ボタンを押すまでは確定させない。
+// 手元(ドラフト)で編集し、タブ下部の「保存」ボタンを押すまでは確定させない。
 function SettingField({
   label,
   value,
   min,
   disabled,
   onChange,
-  onSave,
-  saved,
 }: {
   label: string;
   value: number;
   min: number;
   disabled?: boolean;
   onChange: (value: number) => void;
-  onSave: () => void;
-  saved: boolean;
 }) {
   return (
     <label className="settings-field">
       <span>{label}</span>
-      <span className="settings-field-input-row">
-        <input
-          type="number"
-          min={min}
-          value={value}
-          disabled={disabled}
-          onChange={(e) => onChange(Number(e.target.value))}
-        />
-        <button type="button" className="settings-field-save" onClick={onSave} disabled={disabled}>
-          {saved ? "保存済み" : "保存"}
-        </button>
-      </span>
+      <input
+        type="number"
+        min={min}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
     </label>
   );
 }
@@ -85,13 +76,14 @@ function SettingField({
 // 左メニュー最下部の「設定」ボタンから開くモーダル。
 // 「共通設定」(定期チェック頻度・折りたたみ行数)と「トークン」
 // (応答の長さの標準値・Thinkingの標準値)の2セクションに分かれる。
+// 各タブの下部に1つだけ「保存」ボタンがあり、そのタブ内の未保存項目を
+// まとめて確定させる(項目ごとの個別保存ボタンは持たない)。
 export function SettingsModal({ open, onClose, appSettings, onChangeAppSettings }: Props) {
   const [tab, setTab] = useState<Tab>("common");
   const [taskSettings, setTaskSettings] = useState<ScheduledTaskSettings>(FALLBACK_TASK_SETTINGS);
   const [taskDraft, setTaskDraft] = useState<ScheduledTaskSettings>(FALLBACK_TASK_SETTINGS);
   const [taskSaving, setTaskSaving] = useState(false);
   const [taskLoadError, setTaskLoadError] = useState(false);
-  const [taskSavedField, setTaskSavedField] = useState<string | null>(null);
 
   const [maxTokensSettings, setMaxTokensSettings] = useState<MaxTokensSettings>(
     FALLBACK_MAX_TOKENS_SETTINGS
@@ -101,10 +93,11 @@ export function SettingsModal({ open, onClose, appSettings, onChangeAppSettings 
   );
   const [maxTokensSaving, setMaxTokensSaving] = useState(false);
   const [maxTokensLoadError, setMaxTokensLoadError] = useState(false);
-  const [maxTokensSavedField, setMaxTokensSavedField] = useState<string | null>(null);
 
   const [appDraft, setAppDraft] = useState<AppDisplaySettings>(appSettings);
-  const [appSavedField, setAppSavedField] = useState<string | null>(null);
+
+  const [commonSaved, setCommonSaved] = useState(false);
+  const [tokenSaved, setTokenSaved] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -132,26 +125,37 @@ export function SettingsModal({ open, onClose, appSettings, onChangeAppSettings 
 
   if (!open) return null;
 
-  // バックエンドの接続状況に関わらず、値の入力・変更自体は常に受け付ける
-  // (保存ボタンを押した時点でPUTを送る。接続が復旧していればそこで
-  // 実際に反映される)。
-  // ON/OFFはトグルボタン即時反映(数値項目のようなドラフト→保存ボタンは挟まない)。
+  // ON/OFFトグル類はタブの保存ボタンを待たず即時反映する(数値項目のみ
+  // ドラフト→保存ボタンでまとめて確定する対象)。
   const toggleTaskEnabled = () => {
     const nextEnabled = !taskSettings.enabled;
     setTaskSettings((prev) => ({ ...prev, enabled: nextEnabled }));
-    setTaskSaving(true);
+    setTaskDraft((prev) => ({ ...prev, enabled: nextEnabled }));
     updateScheduledTaskSettings({ enabled: nextEnabled })
       .then((res) => {
         setTaskSettings(res);
         setTaskDraft(res);
         setTaskLoadError(false);
       })
-      .catch(() => setTaskLoadError(true))
-      .finally(() => setTaskSaving(false));
+      .catch(() => setTaskLoadError(true));
   };
 
-  const saveTaskField = (field: keyof ScheduledTaskSettings) => {
-    const patch = { [field]: taskDraft[field] } as Partial<ScheduledTaskSettings>;
+  // 「共通設定」タブの保存ボタン: 定期チェック設定(数値項目)とメッセージ
+  // 折りたたみ設定(ローカル表示設定)をまとめて確定する。
+  const saveCommonTab = () => {
+    setAppDraft((current) => {
+      onChangeAppSettings({
+        userMessageCollapseLines: current.userMessageCollapseLines,
+        assistantMessageCollapseLines: current.assistantMessageCollapseLines,
+      });
+      return current;
+    });
+
+    const patch: Partial<ScheduledTaskSettings> = {
+      interval_seconds: taskDraft.interval_seconds,
+      backoff_failure_threshold: taskDraft.backoff_failure_threshold,
+      backoff_interval_seconds: taskDraft.backoff_interval_seconds,
+    };
     setTaskSettings((prev) => ({ ...prev, ...patch }));
     setTaskSaving(true);
     updateScheduledTaskSettings(patch)
@@ -159,33 +163,27 @@ export function SettingsModal({ open, onClose, appSettings, onChangeAppSettings 
         setTaskSettings(res);
         setTaskDraft(res);
         setTaskLoadError(false);
-        setTaskSavedField(field);
-        window.setTimeout(() => setTaskSavedField(null), 1500);
+        setCommonSaved(true);
+        window.setTimeout(() => setCommonSaved(false), 1500);
       })
       .catch(() => setTaskLoadError(true))
       .finally(() => setTaskSaving(false));
   };
 
-  const saveMaxTokensField = (level: MaxTokensLevel) => {
-    const patch = { [level]: maxTokensDraft[level] } as Partial<MaxTokensSettings>;
-    setMaxTokensSettings((prev) => ({ ...prev, ...patch }));
+  // 「トークン」タブの保存ボタン: 各レベルのトークン数上限をまとめて確定する。
+  const saveTokenTab = () => {
+    setMaxTokensSettings((prev) => ({ ...prev, ...maxTokensDraft }));
     setMaxTokensSaving(true);
-    updateMaxTokensSettings(patch)
+    updateMaxTokensSettings(maxTokensDraft)
       .then((res) => {
         setMaxTokensSettings(res);
         setMaxTokensDraft(res);
         setMaxTokensLoadError(false);
-        setMaxTokensSavedField(level);
-        window.setTimeout(() => setMaxTokensSavedField(null), 1500);
+        setTokenSaved(true);
+        window.setTimeout(() => setTokenSaved(false), 1500);
       })
       .catch(() => setMaxTokensLoadError(true))
       .finally(() => setMaxTokensSaving(false));
-  };
-
-  const saveAppField = (field: keyof AppDisplaySettings) => {
-    onChangeAppSettings({ [field]: appDraft[field] } as Partial<AppDisplaySettings>);
-    setAppSavedField(field);
-    window.setTimeout(() => setAppSavedField(null), 1500);
   };
 
   return (
@@ -236,7 +234,6 @@ export function SettingsModal({ open, onClose, appSettings, onChangeAppSettings 
                   taskSettings.enabled ? "chat-settings-toggle-on" : ""
                 }`}
                 onClick={toggleTaskEnabled}
-                disabled={taskSaving}
                 aria-pressed={taskSettings.enabled}
               >
                 定期実行: {taskSettings.enabled ? "ON" : "OFF"}
@@ -248,8 +245,6 @@ export function SettingsModal({ open, onClose, appSettings, onChangeAppSettings 
               min={60}
               disabled={taskSaving || !taskSettings.enabled}
               onChange={(v) => setTaskDraft((prev) => ({ ...prev, interval_seconds: v }))}
-              onSave={() => saveTaskField("interval_seconds")}
-              saved={taskSavedField === "interval_seconds"}
             />
             <SettingField
               label="連続エラー何回でチェック頻度を延ばすか"
@@ -257,8 +252,6 @@ export function SettingsModal({ open, onClose, appSettings, onChangeAppSettings 
               min={1}
               disabled={taskSaving || !taskSettings.enabled}
               onChange={(v) => setTaskDraft((prev) => ({ ...prev, backoff_failure_threshold: v }))}
-              onSave={() => saveTaskField("backoff_failure_threshold")}
-              saved={taskSavedField === "backoff_failure_threshold"}
             />
             <SettingField
               label="延長後のチェック頻度(秒)"
@@ -266,8 +259,6 @@ export function SettingsModal({ open, onClose, appSettings, onChangeAppSettings 
               min={60}
               disabled={taskSaving || !taskSettings.enabled}
               onChange={(v) => setTaskDraft((prev) => ({ ...prev, backoff_interval_seconds: v }))}
-              onSave={() => saveTaskField("backoff_interval_seconds")}
-              saved={taskSavedField === "backoff_interval_seconds"}
             />
 
             <h3>メッセージの折りたたみ</h3>
@@ -276,8 +267,6 @@ export function SettingsModal({ open, onClose, appSettings, onChangeAppSettings 
               value={appDraft.userMessageCollapseLines}
               min={1}
               onChange={(v) => setAppDraft((prev) => ({ ...prev, userMessageCollapseLines: v }))}
-              onSave={() => saveAppField("userMessageCollapseLines")}
-              saved={appSavedField === "userMessageCollapseLines"}
             />
             <SettingField
               label="回答表示(行)"
@@ -286,9 +275,18 @@ export function SettingsModal({ open, onClose, appSettings, onChangeAppSettings 
               onChange={(v) =>
                 setAppDraft((prev) => ({ ...prev, assistantMessageCollapseLines: v }))
               }
-              onSave={() => saveAppField("assistantMessageCollapseLines")}
-              saved={appSavedField === "assistantMessageCollapseLines"}
             />
+
+            <div className="settings-modal-save-row">
+              <button
+                type="button"
+                className="settings-modal-save"
+                onClick={saveCommonTab}
+                disabled={taskSaving}
+              >
+                {commonSaved ? "保存済み" : "保存"}
+              </button>
+            </div>
           </div>
         )}
 
@@ -311,8 +309,6 @@ export function SettingsModal({ open, onClose, appSettings, onChangeAppSettings 
                 onChange={(v) =>
                   setMaxTokensDraft((prev) => ({ ...prev, [opt.level]: v }))
                 }
-                onSave={() => saveMaxTokensField(opt.level)}
-                saved={maxTokensSavedField === opt.level}
               />
             ))}
 
@@ -348,6 +344,17 @@ export function SettingsModal({ open, onClose, appSettings, onChangeAppSettings 
             >
               Thinking: {appSettings.defaultEnableThinking ? "ON" : "OFF"}
             </button>
+
+            <div className="settings-modal-save-row">
+              <button
+                type="button"
+                className="settings-modal-save"
+                onClick={saveTokenTab}
+                disabled={maxTokensSaving}
+              >
+                {tokenSaved ? "保存済み" : "保存"}
+              </button>
+            </div>
           </div>
         )}
       </div>
