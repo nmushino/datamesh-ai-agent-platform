@@ -3,7 +3,9 @@ _invoke_subagent が、ツール実行後の要約生成でコンテキスト長
 即座に生JSONダンプ(_partial_result_notice)へフォールバックせず、まず
 max_tokens を縮小して要約を再試行することを確認するテスト。
 """
-from langchain_core.messages import AIMessage, HumanMessage
+import json
+
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from agent.orchestrator import graph as graph_module
 
@@ -102,3 +104,21 @@ def test_context_length_error_gives_up_when_messages_already_at_limit(monkeypatc
     )
 
     assert "コンテキスト長の上限を超えたため" in str(result[-1].content)
+
+
+def test_partial_result_notice_is_a_minimal_summary_not_a_full_json_dump(monkeypatch):
+    """打ち切り通知は、以前は各ツール結果の生JSON(最大1500文字/件)をそのまま
+    並べていたため冗長すぎた。成功/失敗と短いエラー概要だけの1行にまとめる。"""
+    huge_content = json.dumps({"error": "x" * 5000, "success": False})
+    ok_content = json.dumps({"exists": False, "success": True})
+    new_messages = [
+        ToolMessage(content=huge_content, tool_call_id="1", name="topic_exists"),
+        ToolMessage(content=ok_content, tool_call_id="2", name="list_github_org_repos"),
+    ]
+
+    notice = graph_module._partial_result_notice(new_messages)
+
+    assert len(notice) < 1000
+    assert "topic_exists" in notice
+    assert "list_github_org_repos" in notice
+    assert "x" * 200 not in notice

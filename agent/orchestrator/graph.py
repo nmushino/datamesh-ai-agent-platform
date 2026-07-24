@@ -387,25 +387,38 @@ def _redirect_unfounded_quality_lookup(tool_calls: list, user_text: str) -> list
     return result
 
 
-_PARTIAL_RESULT_MAX_CHARS = 1500
+_PARTIAL_RESULT_EXCERPT_CHARS = 100
+
+
+def _partial_result_line(m: ToolMessage) -> str:
+    """1件のツール結果を、成功/失敗と短い要約だけの1行に圧縮する。
+    以前は結果のJSON全文(最大1500文字)をそのまま並べていたため、この
+    通知自体がさらにコンテキストを消費する(あるいは単に読みにくい)問題が
+    あった。ユーザーが打ち切り時に必要なのは全データではなく、どこまで
+    進んだかの概要で十分。"""
+    try:
+        data = json.loads(m.content)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        data = None
+    if isinstance(data, dict):
+        if data.get("success") is False:
+            excerpt = str(data.get("error", ""))[:_PARTIAL_RESULT_EXCERPT_CHARS]
+            return f"- `{m.name}`: 失敗({excerpt}{'...' if len(str(data.get('error', ''))) > _PARTIAL_RESULT_EXCERPT_CHARS else ''})"
+        return f"- `{m.name}`: 成功"
+    return f"- `{m.name}`: 完了"
 
 
 def _partial_result_notice(new_messages: list) -> str:
     """コンテキスト長超過で最終応答(自然文でのまとめ)の生成に失敗した際、
-    それまでに取得できていた生データを見せる。LLM呼び出しは例外発生時点で
-    1トークンも返さない同期API呼び出しのため、「部分的に生成された文章」は
-    存在しない。ユーザーが実際に確認したいのは、そこまでに取得できていた
-    データそのものであるため、ツール名の列挙だけでなく実際の結果も含める。"""
+    それまでに実行できていたツールを最小限の一覧で見せる。LLM呼び出しは
+    例外発生時点で1トークンも返さない同期API呼び出しのため、「部分的に
+    生成された文章」は存在しない。"""
     tool_messages = [m for m in new_messages if isinstance(m, ToolMessage) and getattr(m, "name", None)]
     lines = [
         "⚠️ 応答のまとめ生成中にコンテキスト長の上限を超えたため、最後まで完了できませんでした。",
-        "ここまでに取得できていたデータは以下の通りです(まとめ前の生データです):",
+        "ここまでの実行結果(概要):",
     ]
-    for m in tool_messages:
-        content = str(m.content)
-        if len(content) > _PARTIAL_RESULT_MAX_CHARS:
-            content = content[:_PARTIAL_RESULT_MAX_CHARS] + "...(省略)"
-        lines.append(f"\n**{m.name}**\n```json\n{content}\n```")
+    lines.extend(_partial_result_line(m) for m in tool_messages)
     lines.append("\n質問の範囲を絞る(例:サイトや資産タイプを指定する)か、もう一度お試しください。")
     return "\n".join(lines)
 
