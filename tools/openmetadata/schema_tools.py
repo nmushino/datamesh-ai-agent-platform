@@ -127,7 +127,13 @@ def register_topic_metadata(
             Aサイト: "external-shop-cluster-kafka-asite:9094"
             Bサイト: "external-shop-cluster-kafka-bsite:9094"
             Cサイト: "external-shop-cluster-kafka-csite:9094"
-        description: トピックの説明（日本語可）
+        description: トピックの説明（日本語可）。対象リポジトリが分かっている場合は、
+            find_github_files_by_name / get_github_file_content / get_github_readme で
+            README とソースコード(このトピックを実際に publish/subscribe している
+            クラス・関連イベント/データ構造)の両方を確認したうえで組み立てること。
+            ユーザーコメントのみ・トピック名からの推測のみで済ませてよいのは、
+            対象リポジトリが不明、またはGitHub側の情報取得に失敗した場合に限る。
+            参照した情報源(コメント/README/ファイル名)は説明文中に明記すること。
         partitions: パーティション数 (デフォルト1)
         tags: タグリスト (任意)
     """
