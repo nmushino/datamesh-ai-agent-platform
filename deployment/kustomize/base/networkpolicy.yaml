@@ -181,6 +181,17 @@ spec:
           protocol: UDP
         - port: 5353
           protocol: TCP
+    # GitHub API (api.github.com) への egress。schema_agent の list_github_org_repos /
+    # find_github_files_by_name / get_github_readme / get_github_file_content が
+    # このルール無しでは常に ConnectTimeout になっていた(DNS解決は成功するが
+    # TCP接続自体がNetworkPolicyでブロックされていたため)。GitHubのIPは頻繁に
+    # 変わり固定IPの列挙が非現実的なため、他のルールのような ipBlock の狭い
+    # 許可リストではなく、外部HTTPS(443番)全体を許可する。
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - port: 443
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
