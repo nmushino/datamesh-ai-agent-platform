@@ -307,6 +307,27 @@ def _registration_gap_notice(pending: set) -> str:
     )
 
 
+_TOOL_RESULT_STRING_MAX_CHARS = 800
+
+
+def _truncate_tool_result(result: dict) -> dict:
+    """ツールの戻り値(dict)内の文字列フィールドが異常に長い場合(例: Kafka
+    ブローカー接続不可時にAdminClientが出す "Connection to node -1 could not
+    be established" 警告が数十行繰り返された接続エラー文字列)、そのままLLMに
+    渡すと1回のツール結果だけでコンテキスト長の大半を使い切ってしまう
+    (実際に、これが原因で最初のLLM判断ターンの時点でコンテキスト長超過に
+    なるケースを確認した)。dictの各文字列値を安全な長さに切り詰める。
+    ネストしたdict/listの中身までは辿らない(現状のツール戻り値はいずれも
+    フラットなdictのため、フラット層だけで十分)。"""
+    truncated = {}
+    for k, v in result.items():
+        if isinstance(v, str) and len(v) > _TOOL_RESULT_STRING_MAX_CHARS:
+            truncated[k] = v[:_TOOL_RESULT_STRING_MAX_CHARS] + f"...(切り詰め、元の長さ: {len(v)}文字)"
+        else:
+            truncated[k] = v
+    return truncated
+
+
 def _inject_missing_topic_creation(tool_calls: list, prior_messages: list) -> list:
     """register_topic_metadata が呼ばれたが、対応する create_kafka_topic が
     まだ成功していない場合、モデルが手順を省略しても実ブローカーへの作成を
@@ -513,7 +534,7 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
                 else:
                     result = {"error": f"unknown tool: {tc['name']}", "success": False}
             tool_message = ToolMessage(
-                content=json.dumps(result, ensure_ascii=False),
+                content=json.dumps(_truncate_tool_result(result), ensure_ascii=False),
                 tool_call_id=tc["id"],
                 name=tc["name"],
             )

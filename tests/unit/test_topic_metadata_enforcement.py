@@ -236,6 +236,38 @@ def test_failed_registration_is_not_treated_as_done_and_reminder_includes_error(
     assert "tags" not in call_log[1]
 
 
+def test_huge_tool_error_output_is_truncated_before_reaching_llm(monkeypatch):
+    """Kafkaブローカーへの接続不可時、AdminClientが "Connection to node -1
+    could not be established" のようなWARNを何十行も繰り返した巨大な接続
+    エラー文字列を返すことがある。これをそのままLLMに渡すと、最初のLLM
+    判断ターンの時点でコンテキスト長を使い切ってしまうため、ツール結果の
+    文字列フィールドは一定長に切り詰めてからToolMessageに格納すること。"""
+    huge_error = "WARN Connection to node -1 could not be established.\n" * 500
+    assert len(huge_error) > graph_module._TOOL_RESULT_STRING_MAX_CHARS
+
+    tools = [
+        _FakeTool("topic_exists", lambda args: {"error": huge_error, "success": False}),
+    ]
+    monkeypatch.setitem(graph_module._SUBAGENT_CONFIGS, "schema", (tools, "system prompt"))
+
+    topic_exists_call = AIMessage(
+        content="",
+        tool_calls=[{"name": "topic_exists", "args": {"topic_name": "order-test3"}, "id": "1", "type": "tool_call"}],
+    )
+    final_reply = AIMessage(content="接続エラーが発生しました。")
+
+    fake_llm = _FakeLLM([topic_exists_call, final_reply])
+    monkeypatch.setattr(graph_module, "get_llm", lambda enable_thinking=False, max_tokens=1024: fake_llm)
+
+    result = graph_module._invoke_subagent(
+        "schema", False, 1024, [HumanMessage(content="Aサイトに order-test3 トピックを追加して")]
+    )
+
+    tool_message = next(m for m in result if isinstance(m, ToolMessage))
+    assert len(tool_message.content) < len(huge_error)
+    assert "切り詰め" in tool_message.content
+
+
 def test_continuation_context_length_error_does_not_lose_prior_tool_results(monkeypatch):
     """create_kafka_topic 成功直後のLLM呼び出しが max_tokens に達して切れ
     (finish_reason == "length")、_continue_if_truncated の「続き生成」呼び出し
