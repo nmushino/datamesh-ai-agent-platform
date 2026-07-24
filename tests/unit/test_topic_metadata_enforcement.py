@@ -268,6 +268,49 @@ def test_huge_tool_error_output_is_truncated_before_reaching_llm(monkeypatch):
     assert "切り詰め" in tool_message.content
 
 
+def test_context_length_giveup_after_create_shows_registration_gap_not_generic_notice(monkeypatch):
+    """create_kafka_topic 成功後の次のLLM呼び出しがコンテキスト長超過で例外を
+    投げ、その縮小リトライも失敗するケースの回帰テスト。この経路(main loopの
+    例外ハンドラ内でのreturn)は、以前は無条件に _partial_result_notice
+    (「質問の範囲を絞ってください」という一般的な打ち切り通知)を返しており、
+    create_kafka_topic は成功しているのにOpenMetadataへの未登録という重要な
+    情報が埋もれてしまっていた。register_topic_metadata 待ちのトピックが
+    残っている場合は、そちらを優先して知らせること。"""
+    tools = _make_tools()
+    monkeypatch.setitem(graph_module._SUBAGENT_CONFIGS, "schema", (tools, "system prompt"))
+
+    create_call = AIMessage(
+        content="",
+        tool_calls=[{
+            "name": "create_kafka_topic",
+            "args": {"topic_name": "order-test3", "service_name": "external-shop-cluster-kafka-asite:9094"},
+            "id": "1", "type": "tool_call",
+        }],
+    )
+    # 縮小してもなお収まらない(safe_max<=0になる)エラー。
+    unrecoverable_context_length_error = Exception(
+        "maximum context length is 8192 tokens, however you requested 8500 tokens "
+        "(8480 in the messages, 20 in the completion)"
+    )
+
+    fake_llm = _FakeLLM([create_call, unrecoverable_context_length_error])
+    monkeypatch.setattr(graph_module, "get_llm", lambda enable_thinking=False, max_tokens=1024: fake_llm)
+
+    result = graph_module._invoke_subagent(
+        "schema", False, 1024,
+        [
+            HumanMessage(content="Aサイトに order-test3 トピックを追加して"),
+            AIMessage(content="`order-test3` を新規作成します。承認をお願いします。"),
+            HumanMessage(content="承認します。"),
+        ],
+    )
+
+    assert isinstance(result[-1], AIMessage)
+    assert "order-test3" in result[-1].content
+    assert "OpenMetadata" in result[-1].content
+    assert "質問の範囲を絞る" not in result[-1].content
+
+
 def test_continuation_context_length_error_does_not_lose_prior_tool_results(monkeypatch):
     """create_kafka_topic 成功直後のLLM呼び出しが max_tokens に達して切れ
     (finish_reason == "length")、_continue_if_truncated の「続き生成」呼び出し

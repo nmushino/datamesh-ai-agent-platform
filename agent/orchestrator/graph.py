@@ -328,6 +328,17 @@ def _truncate_tool_result(result: dict) -> dict:
     return truncated
 
 
+def _finalize_notice(new_messages: list, pending: set) -> str:
+    """打ち切り通知を組み立てる。register_topic_metadata が未完了のトピックが
+    残っている場合はそれを優先して知らせる(そうでないと、コンテキスト長超過
+    で打ち切られた際に create_kafka_topic は成功しているのにOpenMetadataへの
+    未登録が伝わらないまま「質問の範囲を絞ってください」という一般的な文言に
+    埋もれてしまう)。"""
+    if pending:
+        return _registration_gap_notice(pending)
+    return _partial_result_notice(new_messages)
+
+
 def _inject_missing_topic_creation(tool_calls: list, prior_messages: list) -> list:
     """register_topic_metadata が呼ばれたが、対応する create_kafka_topic が
     まだ成功していない場合、モデルが手順を省略しても実ブローカーへの作成を
@@ -441,14 +452,30 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
                 raise
             safe_max = _shrink_max_tokens_for_error(str(e), max_tokens)
             if safe_max is None or safe_max <= 0:
-                new_messages.append(AIMessage(content=_partial_result_notice(new_messages)))
+                if topics_awaiting_metadata_registration:
+                    log.error(
+                        "schema_agent_metadata_registration_skipped",
+                        pending=list(topics_awaiting_metadata_registration),
+                        reason="context_length_giveup",
+                    )
+                new_messages.append(AIMessage(
+                    content=_finalize_notice(new_messages, topics_awaiting_metadata_registration)
+                ))
                 return new_messages
             log.warning("context_length_retry", node=agent_name, safe_max_tokens=safe_max)
             llm_with_tools = get_llm(enable_thinking=enable_thinking, max_tokens=safe_max).bind_tools(tools)
             try:
                 ai_message = llm_with_tools.invoke(messages)
             except Exception:
-                new_messages.append(AIMessage(content=_partial_result_notice(new_messages)))
+                if topics_awaiting_metadata_registration:
+                    log.error(
+                        "schema_agent_metadata_registration_skipped",
+                        pending=list(topics_awaiting_metadata_registration),
+                        reason="context_length_retry_failed",
+                    )
+                new_messages.append(AIMessage(
+                    content=_finalize_notice(new_messages, topics_awaiting_metadata_registration)
+                ))
                 return new_messages
         tool_calls = getattr(ai_message, "tool_calls", None) or []
         if not tool_calls:
