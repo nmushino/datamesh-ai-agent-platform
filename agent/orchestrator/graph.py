@@ -102,7 +102,7 @@ _TOOL_STATUS_LABELS = {
 }
 
 
-_MAX_TOOL_ITERATIONS = 5
+_MAX_TOOL_ITERATIONS = 8
 
 TRUNCATION_NOTICE = (
     "\n\n⚠️ 応答が長いため、規定回数の自動継続後もまだ途中です。"
@@ -487,6 +487,27 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
             )
             messages.append(tool_message)
             new_messages.append(tool_message)
+    else:
+        # NOTE: for...else の else は break を経由せずループが規定回数
+        # (_MAX_TOOL_ITERATIONS) を使い切った場合にのみ実行される。実際に
+        # topic_exists + GitHub調査(タイムアウトを含む)+ create_kafka_topic だけで
+        # 反復回数を使い切り、register_topic_metadata を呼ぶ前にループが
+        # 終了してしまうケースを確認した。この場合 new_messages の最後は
+        # ToolMessage(生のJSON)のままになり、それがそのままユーザーへの
+        # 最終回答として表示されてしまっていた(自然文の要約が一切無い)。
+        # 未登録のトピックが残っていればその旨を、無ければ通常の打ち切り
+        # 通知を、必ず自然文のAIMessageとして追加してから返す。
+        if topics_awaiting_metadata_registration:
+            log.error(
+                "schema_agent_metadata_registration_skipped",
+                pending=list(topics_awaiting_metadata_registration),
+                reason="max_iterations_exhausted",
+            )
+            new_messages.append(AIMessage(
+                content=_registration_gap_notice(topics_awaiting_metadata_registration)
+            ))
+        elif not new_messages or not isinstance(new_messages[-1], AIMessage):
+            new_messages.append(AIMessage(content=_partial_result_notice(new_messages)))
     return new_messages
 
 
