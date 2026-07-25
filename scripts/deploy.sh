@@ -332,6 +332,17 @@ oc apply -k deployment/kustomize/kafka-shared -n "$KAFKA_NAMESPACE"
 # Jobのpod templateは不変のため、完了済みJobが残っていると再apply時にkustomizeが失敗する
 oc delete job qwen3-8b-model-download -n "$NAMESPACE" --ignore-not-found=true &>/dev/null
 
+# ===== SCC付与 =====
+# postgresql Deployment は rhel9/postgresql-15 イメージ (postgres UID/GID 26 で動作) の
+# ため securityContext.fsGroup: 26 を明示指定している。default ServiceAccount に
+# anyuid SCC が付与されていないと、どのSCCにも適合できず Pod が一切作成されず
+# (ReplicaFailure: FailedCreate)、postgresql に依存する ai-agent-orchestrator /
+# business-api も起動時に接続エラーでクラッシュループする。新規クラスターでは
+# デフォルトで付与されていないため、Kustomize デプロイの前に毎回確実に付与する
+# (既に付与済みの場合は何も起きず安全に完了する)。
+echo "default ServiceAccount に anyuid SCC を付与中..."
+oc adm policy add-scc-to-user anyuid -z default -n "$NAMESPACE"
+
 # ===== Kustomize デプロイ =====
 echo "Kustomize でデプロイ中..."
 oc apply -k "deployment/kustomize/overlays/${ENV}" -n "$NAMESPACE"
