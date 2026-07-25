@@ -28,6 +28,15 @@ spec:
         - "--dtype=float16"
         - "--max-model-len=24576"
         - "--tensor-parallel-size=1"
+        # NOTE: GPU (NVIDIA L4, 23GiB) 1枚専有構成。デフォルト0.9のままだとKVキャッシュに
+        # 約4GiBしか回らず同時実行倍率が1.18倍程度しか出ない。モデル重み(15.27GiB)+
+        # activation/graph capture(約1GiB)を差し引いた残りをKVキャッシュへ最大限回すため
+        # 0.95まで引き上げる(1.0に近づけすぎるとCUDAのフラグメンテーション等でOOMする
+        # リスクがあるため0.95を安全マージンとする)。
+        - "--gpu-memory-utilization=0.95"
+        # NOTE: 同時実行数の上限。KVキャッシュの空き容量(トークン数)が実質的な上限に
+        # なるため、この値自体は余裕を持たせたリクエスト受付上限として設定する。
+        - "--max-num-seqs=64"
         # NOTE: $(MODEL_NAME) は未定義の env 変数参照だったため、KServe が
         # コンテナに自動注入する INFERENCE_SERVICE_NAME に置き換える。
         - "--served-model-name=$(INFERENCE_SERVICE_NAME)"
