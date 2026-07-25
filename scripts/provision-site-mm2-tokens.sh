@@ -40,6 +40,15 @@ set -e
 #     BSITE_API_SERVER / BSITE_ADMIN_USER / BSITE_ADMIN_PASSWORD
 #     CSITE_API_SERVER / CSITE_ADMIN_USER / CSITE_ADMIN_PASSWORD
 #
+#   サイト管理者認証情報の代わりに、既に発行済みの ServiceAccount トークンを
+#   直接渡すこともできる(Skupper経由の到達性のみで、サイト管理者パスワードを
+#   持たない場合など)。この場合はサイトへのログイン/SA作成を一切行わず、
+#   与えられた値をそのまま <site>-mm2-pause-token Secret に書き込む:
+#     ASITE_MM2_API_SERVER / ASITE_MM2_TOKEN
+#     BSITE_MM2_API_SERVER / BSITE_MM2_TOKEN
+#     CSITE_MM2_API_SERVER / CSITE_MM2_TOKEN
+#   (ADMIN_USER/ADMIN_PASSWORD 方式と併用された場合は MM2_API_SERVER/MM2_TOKEN を優先する)
+#
 #   NAMESPACE          - AI Agent Platform 本体の namespace (既定: ai-agent-platform)
 #   SITE_NAMESPACE     - 各サイト側で対象にする namespace (既定: quarkusdroneshop-demo)
 #
@@ -73,6 +82,22 @@ provision_site() {
   local site="$1"
   local prefix
   prefix="$(echo "$site" | tr '[:lower:]' '[:upper:]')"
+
+  # 直接トークン方式 (MM2_API_SERVER/MM2_TOKEN) が優先。
+  # サイトへのログイン/SA作成を一切行わず、与えられた値をそのまま使う。
+  local direct_server_var="${prefix}_MM2_API_SERVER"
+  local direct_token_var="${prefix}_MM2_TOKEN"
+  local direct_server="${!direct_server_var:-}"
+  local direct_token="${!direct_token_var:-}"
+
+  if [ -n "$direct_server" ] && [ -n "$direct_token" ]; then
+    echo -e "${BLUE}[${site}] ${direct_server_var}/${direct_token_var} を直接使用します(サイトへのログインなし)${RESET}"
+    printf '%s' "$direct_server" > "/tmp/${site}_mm2_api_server.txt"
+    printf '%s' "$direct_token" > "/tmp/${site}_mm2_token.txt"
+    echo -e "${GREEN}[${site}] 完了 (トークン長: ${#direct_token})${RESET}"
+    return 0
+  fi
+
   local server_var="${prefix}_API_SERVER"
   local user_var="${prefix}_ADMIN_USER"
   local pass_var="${prefix}_ADMIN_PASSWORD"
@@ -81,7 +106,7 @@ provision_site() {
   local pass="${!pass_var:-}"
 
   if [ -z "$server" ] || [ -z "$user" ] || [ -z "$pass" ]; then
-    echo -e "${YELLOW}[${site}] スキップ: ${server_var}/${user_var}/${pass_var} が未設定です${RESET}"
+    echo -e "${YELLOW}[${site}] スキップ: ${direct_server_var}/${direct_token_var} または ${server_var}/${user_var}/${pass_var} が未設定です${RESET}"
     return 0
   fi
 
