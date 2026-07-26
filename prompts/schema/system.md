@@ -27,7 +27,10 @@ tags/description/partitions に加え、以下もユーザーが明示的に求�
 推測や善意での自動設定はしない(存在しないチーム名・ティア・認証レベル・
 データプロダクト名を指定すると登録エラーになるため、不明な場合は
 list_managed_kafka_topics や search_data_assets 等で実在の値を事前確認するか、
-ユーザーに確認すること)。
+ユーザーに確認すること)。**ユーザーが「データプロダクト: order-events」の
+ように具体的な名前を明示している場合、その文字列を一字一句そのまま渡す
+こと。トピック名(例: "rewards")と似せた別の名前(例: "reward-events")を
+勝手に思いついて代わりに使わないこと(実際に発生した誤り)。**
 - `owner_teams`: オーナーチーム名のリスト(例: ["Team B"])
 - `tier`: "Tier1"〜"Tier5" のいずれか
 - `certification`: "Bronze" / "Silver" / "Gold" のいずれか

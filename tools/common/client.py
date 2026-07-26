@@ -17,6 +17,42 @@ from metadata.ingestion.ometa.ometa_api import OpenMetadata
 
 log = structlog.get_logger()
 
+# OpenMetadata Topic の messageSchema.schemaFields[].dataType が受け付ける
+# 実際のenum値(metadata.generated.schema.type.schema.DataTypeTopic より)。
+# 大文字/小文字を正規化しても、LLMがSQL的な型名(VARCHAR/TEXT/INTEGER等)を
+# 書いてくるとそもそもこのenumに存在せず "Invalid request format" という
+# 原因不明の汎用エラーになる(実機で再現確認済み)。よくある別名から
+# 正しいenum値へのマッピングを用意し、それでも解決できない場合のみ
+# 登録全体を失敗させないよう "STRING" にフォールバックする。
+_VALID_TOPIC_DATA_TYPES: ClassVar[set[str]] = {
+    "RECORD", "NULL", "BOOLEAN", "INT", "LONG", "BYTES", "FLOAT", "DOUBLE",
+    "TIMESTAMP", "TIMESTAMPZ", "TIME", "DATE", "STRING", "ARRAY", "MAP",
+    "ENUM", "UNION", "FIXED", "ERROR", "UNKNOWN",
+}
+_TOPIC_DATA_TYPE_ALIASES: ClassVar[dict[str, str]] = {
+    "VARCHAR": "STRING", "VARCHAR2": "STRING", "TEXT": "STRING", "CHAR": "STRING",
+    "CHARACTER": "STRING", "UUID": "STRING",
+    "INTEGER": "INT", "INT4": "INT", "SMALLINT": "INT", "TINYINT": "INT",
+    "BIGINT": "LONG", "INT8": "LONG",
+    "DECIMAL": "DOUBLE", "NUMERIC": "DOUBLE", "REAL": "DOUBLE", "NUMBER": "DOUBLE",
+    "BOOL": "BOOLEAN",
+    "DATETIME": "TIMESTAMP",
+    "BINARY": "BYTES", "BLOB": "BYTES", "VARBINARY": "BYTES",
+    "OBJECT": "RECORD", "STRUCT": "RECORD",
+    "LIST": "ARRAY",
+}
+
+
+def _normalize_topic_data_type(data_type: str) -> str:
+    upper = data_type.upper()
+    if upper in _VALID_TOPIC_DATA_TYPES:
+        return upper
+    mapped = _TOPIC_DATA_TYPE_ALIASES.get(upper)
+    if mapped:
+        return mapped
+    log.warning("unknown_topic_data_type_fallback_to_string", data_type=data_type)
+    return "STRING"
+
 
 class OpenMetadataClientWrapper:
     def __init__(self, host: str, jwt_token: str):
@@ -221,13 +257,10 @@ class OpenMetadataClientWrapper:
                 request["domains"] = [existing["domains"][0]["fullyQualifiedName"]]
 
         if schema_fields is not None:
-            # NOTE: dataType はOpenMetadata側で大文字enum("STRING"等)が必須だが、
-            # LLMは自然に小文字("string")で渡してくることがあり、その場合サーバーは
-            # 具体的な原因を示さない汎用エラー "Invalid request format" を返すため
-            # 原因の特定が難しい(実際に発生・再現確認済み)。ここで正規化することで
-            # 呼び出し側が大文字/小文字どちらで渡しても通るようにする。
+            # NOTE: dataType の大文字小文字・SQL的な別名(VARCHAR等)を実際の
+            # enum値に正規化する(_normalize_topic_data_type のコメント参照)。
             normalized_fields = [
-                {**f, "dataType": f["dataType"].upper()} if f.get("dataType") else f
+                {**f, "dataType": _normalize_topic_data_type(f["dataType"])} if f.get("dataType") else f
                 for f in schema_fields
             ]
             request["messageSchema"] = {
