@@ -221,10 +221,19 @@ class OpenMetadataClientWrapper:
                 request["domains"] = [existing["domains"][0]["fullyQualifiedName"]]
 
         if schema_fields is not None:
+            # NOTE: dataType はOpenMetadata側で大文字enum("STRING"等)が必須だが、
+            # LLMは自然に小文字("string")で渡してくることがあり、その場合サーバーは
+            # 具体的な原因を示さない汎用エラー "Invalid request format" を返すため
+            # 原因の特定が難しい(実際に発生・再現確認済み)。ここで正規化することで
+            # 呼び出し側が大文字/小文字どちらで渡しても通るようにする。
+            normalized_fields = [
+                {**f, "dataType": f["dataType"].upper()} if f.get("dataType") else f
+                for f in schema_fields
+            ]
             request["messageSchema"] = {
                 "schemaText": (existing or {}).get("messageSchema", {}).get("schemaText", "{}"),
                 "schemaType": (existing or {}).get("messageSchema", {}).get("schemaType", "Other"),
-                "schemaFields": schema_fields,
+                "schemaFields": normalized_fields,
             }
         elif existing and existing.get("messageSchema"):
             request["messageSchema"] = existing["messageSchema"]
