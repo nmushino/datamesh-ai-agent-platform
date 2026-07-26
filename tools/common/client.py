@@ -130,10 +130,20 @@ class OpenMetadataClientWrapper:
         # NOTE: owners/tags/dataProducts/certification/messageSchema は全て
         # fields指定しないと返らない。PUT はエンティティ全体を置き換えるため、
         # 未指定フィールドを消さないよう、まず既存状態を取得してマージする用途で使う。
-        return self._client.client.get(
-            f"/topics/name/{quote_plus(fqn)}"
-            "?fields=owners,tags,dataProducts,domains,certification,messageSchema"
-        )
+        # OMは404レスポンスに"code"フィールドを含めるため、REST clientの
+        # _one_request() がこれを APIError として raise する(Noneを返さない)。
+        # 新規トピック(まだ存在しない)の場合はここで raise されるのを吸収し、
+        # None を返して create_or_update_topic 側の新規作成に進めるようにする。
+        from metadata.ingestion.ometa.client import APIError
+        try:
+            return self._client.client.get(
+                f"/topics/name/{quote_plus(fqn)}"
+                "?fields=owners,tags,dataProducts,domains,certification,messageSchema"
+            )
+        except APIError as e:
+            if getattr(e, "code", None) == 404 or "not found" in str(e).lower():
+                return None
+            raise
 
     def get_team_id_by_name(self, team_name: str) -> str:
         team = self._client.client.get(f"/teams/name/{quote_plus(team_name)}")
