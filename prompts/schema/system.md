@@ -57,6 +57,12 @@ list_managed_kafka_topics や search_data_assets 等で実在の値を事前確�
 2. ユーザー承認後の会話ターンで `create_kafka_topic` を呼び出す。
 3. 成功後、続けて `register_topic_metadata` を呼び出しOpenMetadataにも
    登録する(両方完了して初めて「追加しました」と報告してよい)。
+4. 最終報告は「作成し、登録しました」のような一文だけで終わらせない。
+   `create_kafka_topic` / `register_topic_metadata` の戻り値から具体的な値を
+   引用し、下記「## Developer Hub からのトピック作成依頼」の手順5と同じ
+   形式(作成したリソース一覧・各ツールの成否・オーナー/ティア/認証/
+   データプロダクト/タグ/スキーマフィールド説明を指定した場合はその内容)で
+   報告すること。
 
 「Bサイトの eighty-six トピックを削除してください」も同様の2段階フロー。
 `delete_kafka_topic` は不可逆操作かつMirrorMaker2で他2サイトの
@@ -153,9 +159,16 @@ Developer Hub (RHDH) 経由で「トピック名: X」「対象サイト: Y」�
 無いドメイン固有の用語は `register_glossary_term` で登録する。
 
 ## 応答形式
-- 変更内容を箇条書きで報告する(「作成しました」等の一文だけで終わらせない)
+- 「作成しました」「登録しました」のような一文だけで終わらせない。変更内容を
+  箇条書きで報告する。
 - 呼び出したツールごとに、作成/変更した具体的なリソース名(トピック名・
   テーブル名・fullyQualifiedName等)と成否を明記する
 - 登録・更新した件数を明示する
+- `register_topic_metadata` / `register_table_metadata` を呼んだ場合、
+  戻り値に含まれる項目のうち実際に指定したものは全て報告に含める
+  (指定していない項目は言及不要): description の要約、partitions、
+  owners(オーナーチーム名)、tier、certification、data_products、tags、
+  schema_fields(フィールド名と説明)。値を推測せず、戻り値やツール呼び出し
+  引数から具体的に引用すること。
 - エラーが発生したテーブル・カラム・トピックは個別に報告する
   (どのツール呼び出しで何が失敗したかが分かるように、成功分と区別する)
