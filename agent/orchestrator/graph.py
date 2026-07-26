@@ -328,7 +328,7 @@ def _truncate_tool_result(result: dict) -> dict:
     return truncated
 
 
-def _finalize_notice(new_messages: list, pending: set) -> str:
+def _finalize_notice(new_messages: list, pending: set, context_length_error: bool = True) -> str:
     """打ち切り通知を組み立てる。register_topic_metadata が未完了のトピックが
     残っている場合はそれを優先して知らせる(そうでないと、コンテキスト長超過
     で打ち切られた際に create_kafka_topic は成功しているのにOpenMetadataへの
@@ -336,7 +336,7 @@ def _finalize_notice(new_messages: list, pending: set) -> str:
     埋もれてしまう)。"""
     if pending:
         return _registration_gap_notice(pending)
-    return _partial_result_notice(new_messages)
+    return _partial_result_notice(new_messages, context_length_error)
 
 
 def _inject_missing_topic_creation(tool_calls: list, prior_messages: list) -> list:
@@ -408,18 +408,31 @@ def _partial_result_line(m: ToolMessage) -> str:
     return f"- `{m.name}`: 完了"
 
 
-def _partial_result_notice(new_messages: list) -> str:
-    """コンテキスト長超過で最終応答(自然文でのまとめ)の生成に失敗した際、
-    それまでに実行できていたツールを最小限の一覧で見せる。LLM呼び出しは
-    例外発生時点で1トークンも返さない同期API呼び出しのため、「部分的に
-    生成された文章」は存在しない。"""
+def _partial_result_notice(new_messages: list, context_length_error: bool = True) -> str:
+    """最終応答(自然文でのまとめ)の生成に失敗した際、それまでに実行できていた
+    ツールを最小限の一覧で見せる。LLM呼び出しは例外発生時点で1トークンも
+    返さない同期API呼び出しのため、「部分的に生成された文章」は存在しない。
+
+    context_length_error=False の場合、原因は実際にはコンテキスト長超過では
+    ない(接続エラー等の一時的な障害)。「応答が長すぎる」という誤解を招く
+    文言を出すと、利用者は的外れな対処(質問を絞る等)を試みてしまうため、
+    原因に応じて文言を分ける。"""
     tool_messages = [m for m in new_messages if isinstance(m, ToolMessage) and getattr(m, "name", None)]
-    lines = [
-        "⚠️ 応答のまとめ生成中にコンテキスト長の上限を超えたため、最後まで完了できませんでした。",
-        "ここまでの実行結果(概要):",
-    ]
+    if context_length_error:
+        lines = [
+            "⚠️ 応答のまとめ生成中にコンテキスト長の上限を超えたため、最後まで完了できませんでした。",
+            "ここまでの実行結果(概要):",
+        ]
+    else:
+        lines = [
+            "⚠️ 一時的なエラーが発生したため、応答のまとめ生成を完了できませんでした。",
+            "ここまでの実行結果(概要):",
+        ]
     lines.extend(_partial_result_line(m) for m in tool_messages)
-    lines.append("\n質問の範囲を絞る(例:サイトや資産タイプを指定する)か、もう一度お試しください。")
+    if context_length_error:
+        lines.append("\n質問の範囲を絞る(例:サイトや資産タイプを指定する)か、もう一度お試しください。")
+    else:
+        lines.append("\n少し待ってからもう一度お試しください。")
     return "\n".join(lines)
 
 
@@ -463,31 +476,38 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
             # 縮小リトライに委ねる。
             if not new_messages:
                 raise
-            safe_max = _shrink_max_tokens_for_error(str(e), max_tokens)
+            error_str = str(e)
+            safe_max = _shrink_max_tokens_for_error(error_str, max_tokens)
             if safe_max is None or safe_max <= 0:
+                context_length_error = _is_context_length_error(error_str)
                 if topics_awaiting_metadata_registration:
                     log.error(
                         "schema_agent_metadata_registration_skipped",
                         pending=list(topics_awaiting_metadata_registration),
-                        reason="context_length_giveup",
+                        reason="context_length_giveup" if context_length_error else "transient_error_giveup",
                     )
                 new_messages.append(AIMessage(
-                    content=_finalize_notice(new_messages, topics_awaiting_metadata_registration)
+                    content=_finalize_notice(
+                        new_messages, topics_awaiting_metadata_registration, context_length_error
+                    )
                 ))
                 return new_messages
             log.warning("context_length_retry", node=agent_name, safe_max_tokens=safe_max)
             llm_with_tools = get_llm(enable_thinking=enable_thinking, max_tokens=safe_max).bind_tools(tools)
             try:
                 ai_message = llm_with_tools.invoke(messages)
-            except Exception:
+            except Exception as e2:
+                context_length_error = _is_context_length_error(str(e2))
                 if topics_awaiting_metadata_registration:
                     log.error(
                         "schema_agent_metadata_registration_skipped",
                         pending=list(topics_awaiting_metadata_registration),
-                        reason="context_length_retry_failed",
+                        reason="context_length_retry_failed" if context_length_error else "transient_error_retry_failed",
                     )
                 new_messages.append(AIMessage(
-                    content=_finalize_notice(new_messages, topics_awaiting_metadata_registration)
+                    content=_finalize_notice(
+                        new_messages, topics_awaiting_metadata_registration, context_length_error
+                    )
                 ))
                 return new_messages
         tool_calls = getattr(ai_message, "tool_calls", None) or []
@@ -672,6 +692,17 @@ _CONTEXT_LENGTH_RE = re.compile(
 )
 
 
+def _is_context_length_error(error_message: str) -> bool:
+    """エラーメッセージが実際にコンテキスト長超過によるものかを判定する。
+    _shrink_max_tokens_for_error() は正規表現に一致しない限りNoneを返すが、
+    その"一致しない"原因は接続エラー・タイムアウト等の全く無関係な障害でも
+    起こり得る(実際に vLLM への一時的な接続断で発生することを確認済み)。
+    これを区別せずに「応答が長くなりすぎた」と表示すると、利用者は的外れな
+    対処(質問の範囲を絞る等)を試みてしまう。"""
+    lowered = error_message.lower()
+    return bool(_CONTEXT_LENGTH_RE.search(error_message)) or "context length" in lowered
+
+
 def _shrink_max_tokens_for_error(error_message: str, requested_max_tokens: int) -> int | None:
     """vLLMの'maximum context length'エラーメッセージから実際のプロンプト
     トークン数を読み取り、上限に収まる安全なmax_tokensを計算する。
@@ -707,12 +738,19 @@ def chitchat_node(state: AgentState) -> dict:
         ai_message = llm.invoke(messages)
         ai_message = _continue_if_truncated(llm, messages, ai_message, _status_queue_var.get())
     except Exception as e:
-        safe_max = _shrink_max_tokens_for_error(str(e), max_tokens)
+        error_str = str(e)
+        safe_max = _shrink_max_tokens_for_error(error_str, max_tokens)
         if safe_max is None:
-            log.warning("context_length_giveup", node="chitchat", error=str(e))
-            ai_message = AIMessage(
-                content="すみません、応答が長くなりすぎたため生成できませんでした。もう一度お試しください。"
-            )
+            if _is_context_length_error(error_str):
+                log.warning("context_length_giveup", node="chitchat", error=error_str)
+                ai_message = AIMessage(
+                    content="すみません、応答が長くなりすぎたため生成できませんでした。もう一度お試しください。"
+                )
+            else:
+                log.warning("transient_error_giveup", node="chitchat", error=error_str)
+                ai_message = AIMessage(
+                    content="すみません、一時的なエラーが発生しました。少し待ってからもう一度お試しください。"
+                )
         else:
             log.warning("context_length_retry", node="chitchat", safe_max_tokens=safe_max)
             llm = get_llm(enable_thinking=enable_thinking, max_tokens=safe_max)
@@ -738,18 +776,28 @@ def _invoke_subagent_ensured(
     超える場合は、エラーメッセージから安全なmax_tokensを算出して1回だけ
     縮小再試行する。"""
     current_max_tokens = max_tokens
+    context_length_issue = False
     for attempt in range(3):
         try:
             new_messages = _invoke_subagent(agent_name, enable_thinking, current_max_tokens, input_messages)
         except Exception as e:
-            safe_max = _shrink_max_tokens_for_error(str(e), current_max_tokens)
+            error_str = str(e)
+            safe_max = _shrink_max_tokens_for_error(error_str, current_max_tokens)
             if safe_max is None:
                 # NOTE: 縮小してもコンテキスト長に収まらない(メッセージ側だけで
                 # 上限に迫っている)場合、以前はここで即座に例外を再送出し、
                 # 残りのリトライ回数があってもユーザーに生のAPIエラーが
                 # 表示されてしまっていた。ここでは諦めてフォールバック文言を
                 # 返す方を優先する。
-                log.warning("context_length_giveup", node=agent_name, error=str(e))
+                # ただしこの分岐は「コンテキスト長エラーの形式に一致しない」
+                # 場合すべてに入るため、接続エラー等の全く無関係な障害も
+                # 含まれる(実際に発生を確認済み)。原因を区別して以降の
+                # メッセージを選ぶ。
+                context_length_issue = _is_context_length_error(error_str)
+                log.warning(
+                    "context_length_giveup" if context_length_issue else "transient_error_giveup",
+                    node=agent_name, error=error_str,
+                )
                 break
             log.warning("context_length_retry", node=agent_name, safe_max_tokens=safe_max)
             current_max_tokens = safe_max
@@ -757,7 +805,9 @@ def _invoke_subagent_ensured(
         if new_messages:
             return new_messages
         log.warning("subagent_empty_reply_retry", attempt=attempt)
-    return [AIMessage(content="すみません、応答が長くなりすぎたため生成できませんでした。質問の範囲を絞る(例:サイトや資産タイプを指定する)か、チャット設定の応答の長さを変更してもう一度お試しください。")]
+    if context_length_issue:
+        return [AIMessage(content="すみません、応答が長くなりすぎたため生成できませんでした。質問の範囲を絞る(例:サイトや資産タイプを指定する)か、チャット設定の応答の長さを変更してもう一度お試しください。")]
+    return [AIMessage(content="すみません、一時的なエラーにより応答を生成できませんでした。少し待ってからもう一度お試しください。")]
 
 
 # ツール付きサブエージェント(schema/search/registration)はシステムプロンプト+
