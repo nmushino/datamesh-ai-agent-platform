@@ -108,7 +108,8 @@ def test_reminder_is_injected_and_model_then_registers_metadata(monkeypatch):
     # ダンプになってしまうことがあった)。
     assert isinstance(result[-1], AIMessage)
     assert "order-test3" in result[-1].content
-    assert "登録しました" in result[-1].content
+    assert "OpenMetadata登録" in result[-1].content
+    assert "成功" in result[-1].content
 
 
 def test_gap_notice_replaces_false_success_when_model_never_registers(monkeypatch):
@@ -231,7 +232,8 @@ def test_failed_registration_is_not_treated_as_done_and_reminder_includes_error(
     # 成功後は確定的な完了メッセージで打ち切られ、追加の要約LLM呼び出しは無い。
     assert isinstance(result[-1], AIMessage)
     assert "order-test3" in result[-1].content
-    assert "登録しました" in result[-1].content
+    assert "OpenMetadata登録" in result[-1].content
+    assert "成功" in result[-1].content
     # 2回目は tags 無しで呼ばれ成功していること。
     assert "tags" not in call_log[1]
 
@@ -371,7 +373,8 @@ def test_continuation_context_length_error_does_not_lose_prior_tool_results(monk
     assert tool_names_called == ["create_kafka_topic", "register_topic_metadata"]
     assert isinstance(result[-1], AIMessage)
     assert "order-test3" in result[-1].content
-    assert "登録しました" in result[-1].content
+    assert "OpenMetadata登録" in result[-1].content
+    assert "成功" in result[-1].content
     assert "応答が長くなりすぎたため生成できませんでした" not in str(result[-1].content)
 
 

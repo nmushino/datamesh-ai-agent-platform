@@ -297,6 +297,70 @@ def _reminder_topic_metadata_pending(topic_name: str, service_name: str, last_er
     ))
 
 
+def _topic_creation_success_report(new_messages: list, topic_name: str, service_name: str) -> str:
+    """create_kafka_topic + register_topic_metadata が成功した際の詳細報告を、
+    実際のツール戻り値から確定的に組み立てる(要約用の追加LLM呼び出しは
+    使わない。理由は呼び出し元コメント参照)。以前は
+    「`X` (Y) を作成し、OpenMetadataにも登録しました。」の1文だけを返して
+    おり、作成したトピックの詳細(パーティション数・登録した説明文・
+    タグ・オーナー・データプロダクト等)が一切分からなかった。"""
+    create_result: dict = {}
+    register_result: dict = {}
+    for m in new_messages:
+        if not (isinstance(m, ToolMessage) and isinstance(m.content, str)):
+            continue
+        try:
+            data = json.loads(m.content)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        if m.name == "create_kafka_topic" and data.get("topic_name") == topic_name:
+            create_result = data
+        elif m.name == "register_topic_metadata":
+            register_result = data
+
+    entity = register_result.get("result") or {}
+    description = entity.get("description") or ""
+    if len(description) > 200:
+        description = description[:200] + "..."
+    tags = [t.get("tagFQN") for t in entity.get("tags", []) if t.get("tagFQN")]
+    owners = [o.get("name") for o in entity.get("owners", []) if o.get("name")]
+    data_products = [dp.get("name") for dp in entity.get("dataProducts", []) if dp.get("name")]
+    certification = ((entity.get("certification") or {}).get("tagLabel") or {}).get("tagFQN")
+    schema_fields = (entity.get("messageSchema") or {}).get("schemaFields") or []
+
+    lines = ["Kafkaトピック作成依頼の結果", ""]
+    lines.append("**作成/登録したリソース:**")
+    lines.append(
+        f"- Kafkaトピック: `{service_name}` 上の `{topic_name}` "
+        f"({'成功' if create_result.get('success') else '不明'})"
+    )
+    fqn = register_result.get("fqn", f"{service_name}.{topic_name}")
+    lines.append(
+        f"- OpenMetadata登録: `{fqn}` "
+        f"({'成功' if register_result.get('success') else '不明'})"
+    )
+    if description:
+        lines.append(f"  - 説明: {description}")
+    lines.append(f"  - タグ: {', '.join(tags) if tags else 'なし'}")
+    if owners:
+        lines.append(f"  - オーナー: {', '.join(owners)}")
+    if data_products:
+        lines.append(f"  - データプロダクト: {', '.join(data_products)}")
+    if certification:
+        lines.append(f"  - 認証: {certification}")
+    if schema_fields:
+        field_lines = ", ".join(
+            f"{f.get('name')}({f.get('dataType', '?')})" for f in schema_fields
+        )
+        lines.append(f"  - スキーマフィールド: {field_lines}")
+    lines.append("")
+    lines.append(f"- `create_kafka_topic` の成否: {'成功' if create_result.get('success') else '不明(戻り値が確認できませんでした)'}")
+    lines.append(f"- `register_topic_metadata` の成否: {'成功' if register_result.get('success') else '不明(戻り値が確認できませんでした)'}")
+    return "\n".join(lines)
+
+
 def _registration_gap_notice(pending: set) -> str:
     topics = "、".join(f"`{name}`({service})" for name, service in pending)
     return (
@@ -610,9 +674,9 @@ def _invoke_subagent(agent_name: str, enable_thinking: bool, max_tokens: int, in
             # 追加のLLM呼び出し(要約)を挟まず、ここで確定的な完了メッセージを
             # 返して打ち切る。
             topic_name, service_name = just_registered[-1]
-            new_messages.append(AIMessage(content=(
-                f"`{topic_name}` ({service_name}) を作成し、OpenMetadataにも登録しました。"
-            )))
+            new_messages.append(AIMessage(
+                content=_topic_creation_success_report(new_messages, topic_name, service_name)
+            ))
             return new_messages
     else:
         # NOTE: for...else の else は break を経由せずループが規定回数
