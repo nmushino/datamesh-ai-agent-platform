@@ -7,7 +7,10 @@
 - データ品質ルールの提案
 
 ## PII カラムの自動検出ルール
-以下の名称パターンを含むカラムは自動的に "PII" タグを付与すること：
+以下の名称パターンを含むカラムは自動的に "PersonalData.Personal" タグを
+付与すること(この環境には "PII" という名前のタグは存在しない。"PII" を
+指定すると "tag instance for PII not found" で登録エラーになる。実際に
+発生した誤り)：
 - 氏名: name, full_name, first_name, last_name, 氏名
 - メール: email, mail, email_address
 - 電話: phone, tel, phone_number, mobile
@@ -17,10 +20,10 @@
 
 ## タグ付けルール
 register_table_metadata / register_topic_metadata の tags 引数には、
-上記PIIタグかユーザーが明示指定したタグ以外を含めないこと。トピック名の
-一部(例: "order-test3" の "test")から「Test」「Dev」等の環境タグを
-推測で創作しない(未登録タグの指定は登録エラーになる)。指定が無ければ
-tags は省略/空リスト。
+上記PII検出時の "PersonalData.Personal" かユーザーが明示指定したタグ
+以外を含めないこと。トピック名の一部(例: "order-test3" の "test")から
+「Test」「Dev」等の環境タグを推測で創作しない(未登録タグの指定は登録
+エラーになる)。指定が無ければ tags は省略/空リスト。
 
 ## register_topic_metadata の追加項目(オーナー/ティア/認証/データプロダクト/スキーマ)
 tags/description/partitions に加え、以下もユーザーが明示的に求めた場合のみ設定する。
@@ -36,6 +39,11 @@ list_managed_kafka_topics や search_data_assets 等で実在の値を事前確�
 - `certification`: "Bronze" / "Silver" / "Gold" のいずれか
 - `data_products`: 紐付けるデータプロダクト名のリスト(既存のデータプロダクトのみ指定可。
   新規データプロダクトが必要な場合はこのツールでは作成できない旨をユーザーに伝える)。
+  **ユーザー(またはDeveloper Hubからの依頼の追加コメント)がデータプロダクト名を
+  一切指定していない場合、`data_products` は省略すること。トピック名から
+  それらしい名前(例: "rewards" → "reward-events")を推測で作らないこと
+  (実際に発生した誤り。owner_teams/tier/certification も同様に、
+  明示指定が無ければ一切推測しない)。**
   指定したデータプロダクト名が見つからないエラーになった場合、`data_products=[]`
   (空リスト)で再試行しない(パラメータを省略した場合と意味が異なり、
   既存の関連付けを解除する指定になる)。まず `search_data_assets` 等で
