@@ -89,8 +89,18 @@ def get_github_file_content(repo: str, path: str) -> dict:
         data = resp.json()
         import base64
         content = base64.b64decode(data.get("content", "")).decode("utf-8", errors="replace")
-        MAX_CHARS = 4000
-        return {"repo": repo, "path": path, "content": content[:MAX_CHARS], "success": True}
+        # NOTE: qwen3-8b (max-model-len=24576) を使うこのagentのコンテキスト予算のうち、
+        # システムプロンプト(実測約3372トークン)+ ツールスキーマ15個(実測ソース量から
+        # 概算で約6150トークン)の固定オーバーヘッドが既に約9500トークンを占める。
+        # 残りを会話履歴・他のツール出力・completion (high時3072トークン)で分け合うため、
+        # このツール1回あたり約4000トークン(このプロンプトの実測比率で約15000文字)を
+        # 上限とし、複数ファイル取得や長い会話履歴が続いても破綻しない余裕を残す。
+        MAX_CHARS = 15000
+        truncated = len(content) > MAX_CHARS
+        result_content = content[:MAX_CHARS]
+        if truncated:
+            result_content += f"\n\n... (以下省略: 全{len(content)}文字中、先頭{MAX_CHARS}文字のみ表示)"
+        return {"repo": repo, "path": path, "content": result_content, "truncated": truncated, "success": True}
     except Exception as e:
         log.error("get_github_file_content_failed", repo=repo, path=path, error=str(e))
         return {"error": f"ファイル取得エラー: {e!s}", "success": False}
