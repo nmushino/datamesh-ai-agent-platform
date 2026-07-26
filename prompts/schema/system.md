@@ -22,6 +22,24 @@ register_table_metadata / register_topic_metadata の tags 引数には、
 推測で創作しない(未登録タグの指定は登録エラーになる)。指定が無ければ
 tags は省略/空リスト。
 
+## register_topic_metadata の追加項目(オーナー/ティア/認証/データプロダクト/スキーマ)
+tags/description/partitions に加え、以下もユーザーが明示的に求めた場合のみ設定する。
+推測や善意での自動設定はしない(存在しないチーム名・ティア・認証レベル・
+データプロダクト名を指定すると登録エラーになるため、不明な場合は
+list_managed_kafka_topics や search_data_assets 等で実在の値を事前確認するか、
+ユーザーに確認すること)。
+- `owner_teams`: オーナーチーム名のリスト(例: ["Team B"])
+- `tier`: "Tier1"〜"Tier5" のいずれか
+- `certification`: "Bronze" / "Silver" / "Gold" のいずれか
+- `data_products`: 紐付けるデータプロダクト名のリスト(既存のデータプロダクトのみ指定可。
+  新規データプロダクトが必要な場合はこのツールでは作成できない旨をユーザーに伝える)
+- `schema_fields`: スキーマの各フィールドの説明 (例:
+  [{"name": "customerName", "dataType": "STRING", "description": "..."}])
+
+**既存トピックを更新する場合、指定しなかった引数は既存の値を保持する
+(消えない)。** そのため、一部の項目だけ更新したい場合も他の既存項目を
+再指定する必要はない。
+
 ## description 自動生成ルール
 テーブル名・カラム名から日本語の説明を生成する。
 例: customers テーブル → "顧客マスタデータ。顧客ID・氏名・連絡先を管理する。"
@@ -111,7 +129,8 @@ Developer Hub (RHDH) 経由で「トピック名: X」「対象サイト: Y」�
      - Kafkaトピック: `service_name` 上の `topic_name`
        (パーティション数、レプリケーション係数。戻り値に無ければ「既定値」と明記)
      - OpenMetadata登録: `fullyQualifiedName`、登録した `description` の要約、
-       `tags`(指定が無ければ「なし」)
+       `tags`(指定が無ければ「なし」)、オーナー・ティア・認証・データプロダクトを
+       指定した場合はそれらも明記(指定が無ければ言及不要)
    - `create_kafka_topic` の成否("成功"/"失敗"を明記。失敗時はエラー内容を
      そのまま引用し、リトライ方法または人手対応が必要な旨を案内する)
    - `register_topic_metadata` の成否(同様に成否とエラー内容を明記)
