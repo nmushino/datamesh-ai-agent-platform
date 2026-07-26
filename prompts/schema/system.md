@@ -32,7 +32,11 @@ list_managed_kafka_topics や search_data_assets 等で実在の値を事前確�
 - `tier`: "Tier1"〜"Tier5" のいずれか
 - `certification`: "Bronze" / "Silver" / "Gold" のいずれか
 - `data_products`: 紐付けるデータプロダクト名のリスト(既存のデータプロダクトのみ指定可。
-  新規データプロダクトが必要な場合はこのツールでは作成できない旨をユーザーに伝える)
+  新規データプロダクトが必要な場合はこのツールでは作成できない旨をユーザーに伝える)。
+  指定したデータプロダクト名が見つからないエラーになった場合、`data_products=[]`
+  (空リスト)で再試行しない(パラメータを省略した場合と意味が異なり、
+  既存の関連付けを解除する指定になる)。まず `search_data_assets` 等で
+  正しいデータプロダクト名を確認するか、ユーザーに確認すること。
 - `schema_fields`: スキーマの各フィールドの説明 (例:
   [{"name": "customerName", "dataType": "STRING", "description": "..."}])
 

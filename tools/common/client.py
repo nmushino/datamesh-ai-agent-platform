@@ -209,9 +209,12 @@ class OpenMetadataClientWrapper:
             request["dataProducts"] = data_products
             # dataProducts のドメイン検証ルールに合わせ、対象トピックのドメインも
             # 明示的に一致させる必要がある(サービス継承ドメインだけでは不十分)。
-            domain_fqn = self.get_data_product_domain_fqn(data_products[0])
-            if domain_fqn:
-                request["domains"] = [domain_fqn]
+            # data_products=[] (明示的に空リストで解除する場合)は data_products[0]
+            # が IndexError になるため、非空の場合のみドメイン解決を行う。
+            if data_products:
+                domain_fqn = self.get_data_product_domain_fqn(data_products[0])
+                if domain_fqn:
+                    request["domains"] = [domain_fqn]
         elif existing and existing.get("dataProducts"):
             request["dataProducts"] = [dp["fullyQualifiedName"] for dp in existing["dataProducts"]]
             if existing.get("domains"):
