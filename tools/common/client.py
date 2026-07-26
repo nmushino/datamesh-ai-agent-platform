@@ -2,7 +2,7 @@ import json
 import os
 from functools import lru_cache
 from typing import ClassVar
-from urllib.parse import quote_plus
+from urllib.parse import quote, quote_plus
 
 import httpx
 import structlog
@@ -137,7 +137,7 @@ class OpenMetadataClientWrapper:
         from metadata.ingestion.ometa.client import APIError
         try:
             return self._client.client.get(
-                f"/topics/name/{quote_plus(fqn)}"
+                f"/topics/name/{quote(fqn)}"
                 "?fields=owners,tags,dataProducts,domains,certification,messageSchema"
             )
         except APIError as e:
@@ -146,14 +146,18 @@ class OpenMetadataClientWrapper:
             raise
 
     def get_team_id_by_name(self, team_name: str) -> str:
-        team = self._client.client.get(f"/teams/name/{quote_plus(team_name)}")
+        # NOTE: quote_plus はスペースを "+" に変換するが、これはクエリ文字列用の
+        # エンコーディングであり URL パスセグメントには使えない
+        # ("Team B" が /teams/name/Team+B になり 404 になっていた)。
+        # パスセグメントには quote (スペース -> %20) を使う。
+        team = self._client.client.get(f"/teams/name/{quote(team_name)}")
         if not team:
             raise ValueError(f"チームが見つかりません: {team_name}")
         return team["id"]
 
     def get_data_product_domain_fqn(self, data_product_name: str) -> str | None:
         dp = self._client.client.get(
-            f"/dataProducts/name/{quote_plus(data_product_name)}?fields=domains"
+            f"/dataProducts/name/{quote(data_product_name)}?fields=domains"
         )
         if not dp:
             raise ValueError(f"データプロダクトが見つかりません: {data_product_name}")
