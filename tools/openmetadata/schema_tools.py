@@ -113,6 +113,11 @@ def register_topic_metadata(
     description: str,
     partitions: int = 1,
     tags: list[str] | None = None,
+    owner_teams: list[str] | None = None,
+    tier: str | None = None,
+    certification: str | None = None,
+    data_products: list[str] | None = None,
+    schema_fields: list[dict] | None = None,
 ) -> dict:
     """
     新しい Kafka トピックのメタデータを OpenMetadata に登録します。
@@ -120,6 +125,9 @@ def register_topic_metadata(
     トピックを作成するわけではない。既にブローカー側に存在するトピック、
     または将来作成予定のトピックについて、OpenMetadata 上での説明・所在を
     登録するためのツール)
+
+    既存トピックを更新する場合、このツールに渡さなかった引数(Noneのまま)は
+    既存の値を保持する(消えない)。値を明示的に空にしたい場合は空リストを渡すこと。
 
     Args:
         topic_name: 登録するトピック名 (例: "oder-test")
@@ -135,19 +143,34 @@ def register_topic_metadata(
             対象リポジトリが不明、またはGitHub側の情報取得に失敗した場合に限る。
             参照した情報源(コメント/README/ファイル名)は説明文中に明記すること。
         partitions: パーティション数 (デフォルト1)
-        tags: タグリスト (任意)
+        tags: タグリスト (任意。例: ["PersonalData.Personal"])
+        owner_teams: オーナーとして設定するチーム名のリスト (任意。例: ["Team B"]。
+            存在しないチーム名を指定するとエラーになる)
+        tier: ティア (任意。"Tier1"〜"Tier5" のいずれか。存在しない値はエラーになる)
+        certification: 認証レベル (任意。"Bronze" / "Silver" / "Gold" のいずれか。
+            存在しない値はエラーになる)
+        data_products: 紐付けるデータプロダクト名のリスト (任意。例: ["order-events"]。
+            対象トピックのドメインをデータプロダクト側のドメインに自動的に合わせる
+            ため、存在しないデータプロダクト名を指定するとエラーになる)
+        schema_fields: スキーマフィールドの説明リスト (任意。例:
+            [{"name": "customerName", "dataType": "STRING", "description": "..."}])
     """
     log.info("register_topic_metadata", topic_name=topic_name, service_name=service_name)
     try:
         client = get_openmetadata_client()
-        request = {
-            "name": topic_name,
-            "service": service_name,
-            "description": description,
-            "partitions": partitions,
-            "tags": [{"tagFQN": tag} for tag in (tags or [])],
-        }
-        result = client.create_or_update_topic(request)
+        result = client.upsert_topic_metadata(
+            topic_name=topic_name,
+            service_name=service_name,
+            description=description,
+            partitions=partitions,
+            tags=tags,
+            owner_teams=owner_teams,
+            tier=tier,
+            data_products=data_products,
+            schema_fields=schema_fields,
+        )
+        if certification is not None:
+            result = client.set_topic_certification(result["id"], certification)
         fqn = result.get("fullyQualifiedName", f"{service_name}.{topic_name}")
         return {"fqn": fqn, "created": True, "result": result, "success": True}
     except Exception as e:

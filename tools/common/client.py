@@ -126,6 +126,116 @@ class OpenMetadataClientWrapper:
             raise ValueError("トピック作成に失敗しました(レスポンスが空)")
         return result
 
+    def get_topic(self, fqn: str) -> dict | None:
+        # NOTE: owners/tags/dataProducts/certification/messageSchema は全て
+        # fields指定しないと返らない。PUT はエンティティ全体を置き換えるため、
+        # 未指定フィールドを消さないよう、まず既存状態を取得してマージする用途で使う。
+        return self._client.client.get(
+            f"/topics/name/{quote_plus(fqn)}"
+            "?fields=owners,tags,dataProducts,domains,certification,messageSchema"
+        )
+
+    def get_team_id_by_name(self, team_name: str) -> str:
+        team = self._client.client.get(f"/teams/name/{quote_plus(team_name)}")
+        if not team:
+            raise ValueError(f"チームが見つかりません: {team_name}")
+        return team["id"]
+
+    def get_data_product_domain_fqn(self, data_product_name: str) -> str | None:
+        dp = self._client.client.get(
+            f"/dataProducts/name/{quote_plus(data_product_name)}?fields=domains"
+        )
+        if not dp:
+            raise ValueError(f"データプロダクトが見つかりません: {data_product_name}")
+        domains = dp.get("domains") or []
+        return domains[0]["fullyQualifiedName"] if domains else None
+
+    def upsert_topic_metadata(
+        self,
+        topic_name: str,
+        service_name: str,
+        description: str,
+        partitions: int = 1,
+        tags: list[str] | None = None,
+        owner_teams: list[str] | None = None,
+        tier: str | None = None,
+        data_products: list[str] | None = None,
+        schema_fields: list[dict] | None = None,
+    ) -> dict:
+        # NOTE: PUT /topics はエンティティ全体を置き換えるため、省略した
+        # フィールド(owners/tags/dataProducts/messageSchema等)は既存の値が
+        # あっても消える。既存トピックがあれば取得してベースにし、明示的に
+        # 渡されたフィールドだけ上書きする。
+        fqn = f"{service_name}.{topic_name}"
+        existing = self.get_topic(fqn)
+
+        request: dict = {
+            "name": topic_name,
+            "service": service_name,
+            "description": description,
+            "partitions": partitions,
+        }
+
+        if tags is not None or tier is not None:
+            tag_fqns = list(tags or [])
+            if tier is not None:
+                tag_fqns.append(f"Tier.{tier}")
+            request["tags"] = [{"tagFQN": t} for t in tag_fqns]
+        elif existing and existing.get("tags"):
+            request["tags"] = [{"tagFQN": t["tagFQN"]} for t in existing["tags"]]
+
+        if owner_teams is not None:
+            request["owners"] = [
+                {"id": self.get_team_id_by_name(team), "type": "team"} for team in owner_teams
+            ]
+        elif existing and existing.get("owners"):
+            request["owners"] = [{"id": o["id"], "type": o["type"]} for o in existing["owners"]]
+
+        if data_products is not None:
+            request["dataProducts"] = data_products
+            # dataProducts のドメイン検証ルールに合わせ、対象トピックのドメインも
+            # 明示的に一致させる必要がある(サービス継承ドメインだけでは不十分)。
+            domain_fqn = self.get_data_product_domain_fqn(data_products[0])
+            if domain_fqn:
+                request["domains"] = [domain_fqn]
+        elif existing and existing.get("dataProducts"):
+            request["dataProducts"] = [dp["fullyQualifiedName"] for dp in existing["dataProducts"]]
+            if existing.get("domains"):
+                request["domains"] = [existing["domains"][0]["fullyQualifiedName"]]
+
+        if schema_fields is not None:
+            request["messageSchema"] = {
+                "schemaText": (existing or {}).get("messageSchema", {}).get("schemaText", "{}"),
+                "schemaType": (existing or {}).get("messageSchema", {}).get("schemaType", "Other"),
+                "schemaFields": schema_fields,
+            }
+        elif existing and existing.get("messageSchema"):
+            request["messageSchema"] = existing["messageSchema"]
+
+        return self.create_or_update_topic(request)
+
+    def set_topic_certification(self, topic_id: str, certification_tier: str | None) -> dict:
+        if certification_tier is None:
+            return {}
+        patch = [{
+            "op": "add",
+            "path": "/certification",
+            "value": {
+                "tagLabel": {
+                    "tagFQN": f"Certification.{certification_tier}",
+                    "source": "Classification",
+                    "labelType": "Manual",
+                    "state": "Confirmed",
+                }
+            },
+        }]
+        result = self._client.client.patch(
+            f"/topics/{topic_id}", data=json.dumps(patch, ensure_ascii=False)
+        )
+        if not result:
+            raise ValueError("認証(Certification)の設定に失敗しました(レスポンスが空)")
+        return result
+
     def create_or_update_glossary_term(self, request: dict) -> dict:
         # NOTE: create_or_update_topic と同様、SDK の CreateGlossaryTermRequest
         # モデルはサーバー(1.13.0)とのフィールド差分で拒否されることがあるため、
