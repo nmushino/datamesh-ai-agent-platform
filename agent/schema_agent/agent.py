@@ -16,12 +16,14 @@ from tools.kafka import (
     topic_exists,
 )
 from tools.openmetadata import (
+    add_data_lineage,
     create_quality_rule,
     get_database_schema,
     list_tables,
     register_glossary_term,
     register_table_metadata,
     register_topic_metadata,
+    remove_data_lineage,
     update_column_description,
 )
 
@@ -43,6 +45,8 @@ SCHEMA_TOOLS = [
     get_github_file_content,
     get_github_readme,
     list_github_org_repos,
+    add_data_lineage,
+    remove_data_lineage,
 ]
 
 # 実ブローカーへの書き込みを伴うため承認必須 (orchestrator の human_approval_node で参照)

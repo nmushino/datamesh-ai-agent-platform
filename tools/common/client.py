@@ -322,6 +322,49 @@ class OpenMetadataClientWrapper:
             raise ValueError(f"Entity not found: {fqn}")
         return response
 
+    # lineage の追加/削除で使う、エンティティ種別ごとの REST パスプレフィックス。
+    _LINEAGE_ENTITY_PATHS: ClassVar[dict[str, str]] = {
+        "table": "tables", "topic": "topics", "pipeline": "pipelines",
+        "dashboard": "dashboards", "dataProduct": "dataProducts",
+    }
+
+    def _get_entity_id(self, entity_type: str, fqn: str) -> str:
+        path = self._LINEAGE_ENTITY_PATHS.get(entity_type)
+        if not path:
+            raise ValueError(f"未対応のエンティティ種別: {entity_type}")
+        entity = self._client.client.get(f"/{path}/name/{quote(fqn)}")
+        if not entity:
+            raise ValueError(f"エンティティが見つかりません ({entity_type}): {fqn}")
+        return entity["id"]
+
+    def add_lineage_edge(
+        self, from_entity_type: str, from_fqn: str,
+        to_entity_type: str, to_fqn: str, description: str | None = None,
+    ) -> dict:
+        # NOTE: OpenMetadataの公式SDK (AddLineageRequest) はサーバー(1.13.0)との
+        # スキーマ差分の懸念があるため、他のメソッドと同様に生の REST PUT を使う。
+        from_id = self._get_entity_id(from_entity_type, from_fqn)
+        to_id = self._get_entity_id(to_entity_type, to_fqn)
+        payload: dict = {
+            "edge": {
+                "fromEntity": {"id": from_id, "type": from_entity_type},
+                "toEntity": {"id": to_id, "type": to_entity_type},
+            }
+        }
+        if description:
+            payload["edge"]["description"] = description
+        result = self._client.client.put("/lineage", data=json.dumps(payload, ensure_ascii=False))
+        return result or {"success": True}
+
+    def remove_lineage_edge(
+        self, from_entity_type: str, from_fqn: str, to_entity_type: str, to_fqn: str,
+    ) -> None:
+        from_id = self._get_entity_id(from_entity_type, from_fqn)
+        to_id = self._get_entity_id(to_entity_type, to_fqn)
+        self._client.client.delete(
+            f"/lineage/{from_entity_type}/{from_id}/{to_entity_type}/{to_id}"
+        )
+
     def get_quality_test_cases(self, table_fqn: str, limit: int = 20) -> list[dict]:
         # NOTE: get_table() 経由の pydantic SDK モデルはサーバー(1.13.0)とSDK(1.3.0)の
         # スキーマ差分で ValidationError になり使えないため、生の REST API を叩く。

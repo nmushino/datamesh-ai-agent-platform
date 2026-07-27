@@ -1,5 +1,5 @@
 from .history_tools import search_conversation_history
-from .lineage_tools import get_data_lineage
+from .lineage_tools import add_data_lineage, get_data_lineage, remove_data_lineage
 from .quality_tools import (
     create_quality_rule,
     get_data_quality_overview,
@@ -21,6 +21,7 @@ from .search_tools import (
 )
 
 __all__ = [
+    "add_data_lineage",
     "create_quality_rule",
     "get_data_lineage",
     "get_data_quality_overview",
@@ -33,6 +34,7 @@ __all__ = [
     "register_glossary_term",
     "register_table_metadata",
     "register_topic_metadata",
+    "remove_data_lineage",
     "search_conversation_history",
     "search_data_assets",
     "update_column_description",
