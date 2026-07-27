@@ -37,6 +37,15 @@ _INTENT_PATTERNS: list[tuple[str, list[str]]] = [
         # classify_intent_detailed は text.lower() 済みの文字列に対して照合するため
         # 小文字の a/b/c で判定する。
         "[abc]サイト.*作成", "[abc]サイト.*追加", "[abc]サイト.*登録", "[abc]サイト.*削除",
+        # NOTE: 品質ルールの新規作成依頼(create_quality_rule は schema_agent の
+        # ツール)が、"品質" を含まない "データ.*追加" 等の汎用パターンに
+        # 先に一致してしまい、この機能を持たない registration_agent へ誤って
+        # ルーティングされる事象を確認した("...データ品質ルールを追加して"
+        # という文言が data_register の "データ.*追加" に一致してしまうため)。
+        # schema_sync はリスト内で data_register より先に評価されるため、
+        # 品質ルール関連のパターンをここに追加して優先させる。
+        "品質.*ルール", "品質.*テスト", "quality.*rule", "test.*case.*追加",
+        "リネージ.*追加", "リネージ.*削除", "lineage.*追加",
     ]),
     ("metadata_update", [
         "説明.*更新", "タグ.*付け", "オーナー.*変更",
