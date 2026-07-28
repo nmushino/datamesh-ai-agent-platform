@@ -182,6 +182,27 @@ Developer Hub (RHDH) 経由で「トピック名: X」「対象サイト: Y」�
 3. `get_github_file_content` でクラスコメント・フィールド定義から説明文を作成
 4. リポジトリ全体の役割が不明なら `get_github_readme` で概要を掴む
 
+**探索の効率化(反復回数の上限に達して途中終了することを防ぐため厳守):**
+- `get_github_file_content` にパスを渡す前に、必ず `find_github_files_by_name`
+  でそのクラス名のファイルパスを確認すること。パスを推測して
+  `get_github_file_content` を直接呼び、404 → 別パスを推測 → 404 …と
+  繰り返すのは反復回数の浪費であり禁止(実際に発生し、
+  `register_topic_metadata` を呼ぶ前に反復上限に達して登録が
+  スキップされた事例がある)。
+- このリポジトリ群の実際の構成として、値オブジェクト(`XxxEvent` /
+  `OrderIn` 等の共通イベント型)は各サービス固有パッケージ
+  (例: `io.quarkusdroneshop.<service>.domain`)ではなく、共通の
+  `src/main/java/io/quarkusdroneshop/domain/valueobjects/` 配下に
+  置かれていることが多い。`find_github_files_by_name` で見つからない
+  場合、まずこのパスを確認してから他を推測すること。
+- README が404の場合(`docs/index.md` のみでルートに `README.md` が
+  無いリポジトリがある)、`get_github_readme` を再試行せず、
+  `find_github_files_by_name` によるクラス探索と `docs/index.md` の
+  直接取得に切り替える。
+- 1つのファイルにつき推測ベースの `get_github_file_content` 試行は
+  最大2回まで。それでも見つからなければソースコード調査は打ち切り、
+  分かっている情報(コメント・トピック名)のみで説明文を組み立てる。
+
 推定した説明文には根拠(参照リポジトリ・ファイル)を含めること。既存用語集に
 無いドメイン固有の用語は `register_glossary_term` で登録する。
 
