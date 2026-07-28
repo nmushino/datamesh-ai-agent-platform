@@ -169,10 +169,18 @@ def register_topic_metadata(
             data_products=data_products,
             schema_fields=schema_fields,
         )
+        skipped_data_products = result.pop("_skipped_data_products", None)
         if certification is not None:
             result = client.set_topic_certification(result["id"], certification)
         fqn = result.get("fullyQualifiedName", f"{service_name}.{topic_name}")
-        return {"fqn": fqn, "created": True, "result": result, "success": True}
+        response = {"fqn": fqn, "created": True, "result": result, "success": True}
+        if skipped_data_products:
+            response["skipped_data_products"] = skipped_data_products
+            response["warning"] = (
+                f"存在しないデータプロダクト名のため無視しました: {skipped_data_products}。"
+                "他の項目(description/tags/schema_fields等)は登録されています。"
+            )
+        return response
     except Exception as e:
         log.error("register_topic_metadata_failed", topic_name=topic_name, error=str(e))
         return {"error": f"トピック登録エラー: {e!s}", "success": False}
