@@ -191,10 +191,21 @@ class OpenMetadataClientWrapper:
             raise ValueError(f"チームが見つかりません: {team_name}")
         return team["id"]
 
+    def get_data_product(self, data_product_name: str) -> dict | None:
+        # get_topic と同様、OM は404を APIError として raise するため吸収し、
+        # 存在しない場合は None を返す(呼び出し側で存在チェックに使う)。
+        from metadata.ingestion.ometa.client import APIError
+        try:
+            return self._client.client.get(
+                f"/dataProducts/name/{quote(data_product_name)}?fields=domains"
+            )
+        except APIError as e:
+            if getattr(e, "code", None) == 404 or "not found" in str(e).lower():
+                return None
+            raise
+
     def get_data_product_domain_fqn(self, data_product_name: str) -> str | None:
-        dp = self._client.client.get(
-            f"/dataProducts/name/{quote(data_product_name)}?fields=domains"
-        )
+        dp = self.get_data_product(data_product_name)
         if not dp:
             raise ValueError(f"データプロダクトが見つかりません: {data_product_name}")
         domains = dp.get("domains") or []
@@ -241,14 +252,25 @@ class OpenMetadataClientWrapper:
         elif existing and existing.get("owners"):
             request["owners"] = [{"id": o["id"], "type": o["type"]} for o in existing["owners"]]
 
+        skipped_data_products: list[str] = []
         if data_products is not None:
-            request["dataProducts"] = data_products
+            # LLM がトピック名から実在しないデータプロダクト名を推測で創作する
+            # ケースが実際に発生した(例: "rewards" → "reward-events")。以前は
+            # そのまま送信して OM 側の "dataProduct instance for X not found"
+            # で登録全体(description/partitions等、無関係なフィールドも含め)
+            # が失敗していた。存在確認したうえで、存在するものだけを送信し、
+            # 存在しないものは無視して残りの登録を成功させる。
+            valid_data_products = []
+            for dp_name in data_products:
+                if self.get_data_product(dp_name):
+                    valid_data_products.append(dp_name)
+                else:
+                    skipped_data_products.append(dp_name)
+            request["dataProducts"] = valid_data_products
             # dataProducts のドメイン検証ルールに合わせ、対象トピックのドメインも
             # 明示的に一致させる必要がある(サービス継承ドメインだけでは不十分)。
-            # data_products=[] (明示的に空リストで解除する場合)は data_products[0]
-            # が IndexError になるため、非空の場合のみドメイン解決を行う。
-            if data_products:
-                domain_fqn = self.get_data_product_domain_fqn(data_products[0])
+            if valid_data_products:
+                domain_fqn = self.get_data_product_domain_fqn(valid_data_products[0])
                 if domain_fqn:
                     request["domains"] = [domain_fqn]
         elif existing and existing.get("dataProducts"):
@@ -271,7 +293,10 @@ class OpenMetadataClientWrapper:
         elif existing and existing.get("messageSchema"):
             request["messageSchema"] = existing["messageSchema"]
 
-        return self.create_or_update_topic(request)
+        result = self.create_or_update_topic(request)
+        if skipped_data_products:
+            result["_skipped_data_products"] = skipped_data_products
+        return result
 
     def set_topic_certification(self, topic_id: str, certification_tier: str | None) -> dict:
         if certification_tier is None:
