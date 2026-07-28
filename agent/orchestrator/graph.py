@@ -102,7 +102,11 @@ _TOOL_STATUS_LABELS = {
 }
 
 
-_MAX_TOOL_ITERATIONS = 16
+# NOTE: 2026-07-28 16 → 24 に引き上げ。スキーマ探索(GitHubファイル調査)が
+# パッケージ構成の推測ミスで何度も404を踏むと、create_kafka_topic まで到達した
+# 時点で反復回数を使い切り、register_topic_metadata を一度も呼べずに
+# 打ち切られるケースを確認した(reason=max_iterations_exhausted)。
+_MAX_TOOL_ITERATIONS = 24
 
 TRUNCATION_NOTICE = (
     "\n\n⚠️ 応答が長いため、規定回数の自動継続後もまだ途中です。"
